@@ -93,11 +93,13 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 .tag{position:absolute;right:12px;top:8px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
   color:var(--card-ink-2)}
 .card[data-source="estimate"] .tag{color:var(--estimate)}
-.pill{pointer-events:auto;align-self:center;background:var(--surface);backdrop-filter:blur(18px) saturate(1.5);
+.pill{pointer-events:auto;align-self:center;order:1;background:var(--surface);backdrop-filter:blur(18px) saturate(1.5);
   -webkit-backdrop-filter:blur(18px) saturate(1.5);border:1px solid var(--line);border-radius:999px;
-  padding:8px 14px 8px 12px;font-size:13.5px;font-weight:600;display:flex;gap:8px;align-items:center;box-shadow:var(--shadow);
-  position:absolute;top:calc(var(--st) + 10px);opacity:0;transform:translateY(-8px);transition:opacity .25s,transform .25s}
-.pill.show{opacity:1;transform:none}
+  padding:8px 14px 8px 12px;font-size:13.5px;font-weight:600;display:none;gap:8px;align-items:center;box-shadow:var(--shadow)}
+.pill.show{display:flex}
+.pill[data-state="prio"]{background:var(--ok);color:#fff;border-color:transparent}
+.pill[data-state="prio"] i{background:#fff}
+.nav{order:0}.card{order:2}
 .pill i{width:8px;height:8px;border-radius:50%;background:var(--ok);display:block}
 .pill[data-state="wait"] i{background:var(--estimate);animation:blink 1.2s infinite}
 .pill[data-state="err"] i{background:var(--yield)}
@@ -170,7 +172,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 @keyframes ring{from{transform:scale(1);opacity:.9}to{transform:scale(2.6);opacity:0}}
 @media (prefers-reduced-motion:reduce){
   .jx::after,.pill[data-state="wait"] i{animation:none}
-  .card,.switch::after,.fab,.pill{transition:none}
+  .card,.switch::after,.fab{transition:none}
 }
 @media (max-height:480px){ .chips,.search{display:none} .fab{bottom:calc(var(--sb) + 110px)} }
 </style>
@@ -425,6 +427,8 @@ var Core=(function(){
     }
     /* I have priority over the side roads, but a left turn still crosses oncoming traffic */
     if(move==='left'&&onc.length)return makeAlert(q,'left_turn','rule',onc,others,dist,'',X);
+    /* priority confirmed by the map: every side road carries a mapped yield/stop sign */
+    if(lr.length&&lr.every(function(o){return o.sign;}))return {kind:'priority',key:q.id+':priority',dist:dist,lat:q.lat,lon:q.lon};
     return null;
   }
 
@@ -486,7 +490,8 @@ var Core=(function(){
         }
         if(pending){var toJ=acc-pending.acc;if(toJ<=60&&(pending.explicit||toJ<=pending.acc-prevJ))sign=pending.kind;}
         var al=evalJunction(q,w,j,d,sign,acc,opts,exitArm);
-        if(al){al.path=path;return al;}
+        if(al&&al.kind==='priority'){if(opts&&opts.info&&!opts.info.prio)opts.info.prio=al;}
+        else if(al){al.path=path;return al;}
         pending=null;prevJ=acc;
       }
       var nj=j+d;
@@ -554,7 +559,7 @@ var RADIUS=900;
 var HOME=[26.0864,44.4527]; /* Piața Victoriei, București */
 var ROUTERS=['https://router.project-osrm.org/route/v1/driving/','https://routing.openstreetmap.de/routed-car/route/v1/driving/'];
 var S={on:false,voice:true,estimates:true,signals:true,dest:null,route:null,R:null,routeS:null,offCount:0,routing:false,routeAt:0,simS:0,sigAt:0,sim:false,follow:true,pos:null,heading:null,speed:0,acc:null,lastFix:null,
-  graph:null,center:null,reach:450,fails:0,fetching:false,failAt:0,m:null,alert:null,alertAt:0,spoken:{},watch:null,simState:null,simTimer:null,wake:null,mapReady:false};
+  graph:null,center:null,reach:450,fails:0,fetching:false,failAt:0,m:null,alert:null,alertAt:0,prio:null,spoken:{},watch:null,simState:null,simTimer:null,wake:null,mapReady:false};
 
 try{var saved=JSON.parse(localStorage.getItem('prioritate')||'{}');if(saved.voice===false)S.voice=false;if(saved.estimates===false)S.estimates=false;if(saved.signals===false)S.signals=false;}catch(e){}
 function save(){try{localStorage.setItem('prioritate',JSON.stringify({voice:S.voice,estimates:S.estimates,signals:S.signals}));}catch(e){}}
@@ -727,13 +732,14 @@ function render(){
     card.classList.add('show');pill.classList.remove('show');
   }else{
     shownKey=null;card.classList.remove('show');
-    pill.classList.toggle('show',S.on&&!navOn);
+    pill.classList.toggle('show',S.on&&(!navOn||!!S.prio));
   }
   if(!S.on){$('gps').textContent='GPS oprit';return;}
   $('gps').textContent=S.sim?'Demo, fără GPS':S.acc!=null?'GPS ±'+Math.round(S.acc)+' m':'Caut semnal GPS…';
   if(!S.pos)setPill(S.sim?'Pregătesc demo…':'Caut poziția ta…','wait');
   else if(!S.graph)setPill(S.failAt&&!S.fetching?'Servere ocupate, reîncerc…':'Încarc drumurile din zonă…',S.failAt&&!S.fetching?'err':'wait');
   else if(!S.m)setPill('Nu ești pe un drum cunoscut','wait');
+  else if(S.prio)setPill('Ai prioritate'+(S.prio.dist>=25?' · '+fmtDist(S.prio.dist):''),'prio');
   else setPill('Nicio cedare în față','ok');
 }
 
@@ -823,7 +829,7 @@ function onFix(lon,lat,heading,speed,acc){
   }
   S.pos=[lon,lat];S.heading=heading;S.speed=speed||0;S.acc=acc;S.lastFix=Date.now();
   needData(lon,lat);
-  var alert=null;
+  var alert=null;S.prio=null;
   if(S.dest&&!S.route)requestRoute();
   if(S.graph&&S.route){
     if(!S.R)S.R=Core.routeXY(S.graph,S.route.coords);
@@ -836,10 +842,11 @@ function onFix(lon,lat,heading,speed,acc){
   if(S.graph){
     S.m=Core.match(S.graph,lat,lon,heading,S.m);
     if(S.m){
-      var o={estimates:S.estimates,signals:S.signals,maxDist:380};
+      var o={estimates:S.estimates,signals:S.signals,maxDist:380,info:{}};
       if(S.route&&S.R&&S.routeS!=null&&S.offCount===0){o.route=S.R;o.routeS=S.routeS;}
       var al=Core.lookAhead(S.graph,S.m,o);
       if(al&&al.dist<=Math.max(220,S.speed*14))alert=al;
+      var pi=o.info.prio;S.prio=pi&&pi.dist<=Math.max(120,S.speed*10)&&(!alert||pi.dist<alert.dist)?pi:null;
     }
   }
   var now=Date.now();
@@ -877,7 +884,7 @@ function start(){
   redrawOverlay();render();
 }
 function stop(){
-  S.on=false;S.alert=null;S.m=null;S.pos=null;S.acc=null;
+  S.on=false;S.alert=null;S.prio=null;S.m=null;S.pos=null;S.acc=null;
   if(S.watch!=null){navigator.geolocation.clearWatch(S.watch);S.watch=null;}
   stopSim();S.sim=false;
   try{if(S.wake){S.wake.release();S.wake=null;}}catch(e){}
