@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prioritate">
+<meta name="theme-color" content="#101418">
+<title>Prioritate</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+/* Layout idea: full-bleed map; one maneuver card pinned top, one control sheet pinned bottom. */
+:root{
+  --bg:#e9edf1;
+  --surface:rgba(250,251,253,.86);
+  --surface-solid:#fafbfd;
+  --ink:#10151c;
+  --ink-2:#5b6675;
+  --line:rgba(16,21,28,.10);
+  --accent:#1766ff;
+  --yield:#e2372d;
+  --estimate:#d98400;
+  --ok:#16a05a;
+  --card:#12171e;
+  --card-ink:#ffffff;
+  --card-ink-2:rgba(255,255,255,.66);
+  --shadow:0 10px 30px rgba(16,21,28,.18),0 2px 6px rgba(16,21,28,.10);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --st:env(safe-area-inset-top,0px);
+  --sb:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    color-scheme:dark;
+    --bg:#0c1014;
+    --surface:rgba(24,29,36,.84);
+    --surface-solid:#181d24;
+    --ink:#f2f5f8;
+    --ink-2:#9aa5b3;
+    --line:rgba(255,255,255,.10);
+    --accent:#4d8dff;
+    --yield:#ff5449;
+    --estimate:#ffad33;
+    --ok:#35c97c;
+    --card:#1b222b;
+    --shadow:0 10px 30px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#map{position:absolute;inset:0;background:var(--bg)}
+.maplibregl-ctrl-bottom-left,.maplibregl-ctrl-bottom-right,.maplibregl-ctrl-top-right,.maplibregl-ctrl-top-left{display:none}
+
+/* ---------- top: maneuver card ---------- */
+.top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 10px) 12px 0;pointer-events:none;
+  display:flex;flex-direction:column;gap:8px;align-items:stretch;max-width:520px;margin:0 auto}
+.card{pointer-events:auto;background:var(--card);color:var(--card-ink);border-radius:22px;box-shadow:var(--shadow);
+  padding:14px 14px 14px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;
+  position:relative;overflow:hidden;transform:translateY(-140%);opacity:0;
+  transition:transform .42s cubic-bezier(.2,.9,.25,1),opacity .25s}
+.card.show{transform:none;opacity:1}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--yield)}
+.card[data-source="estimate"]::before{background:var(--estimate)}
+.card[data-kind="roundabout"]::before{background:var(--accent)}
+.sign{width:58px;height:58px;display:grid;place-items:center}
+.sign svg{width:58px;height:58px;display:block}
+.card .dist{font-family:var(--font-display);font-size:34px;line-height:1;font-weight:700;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.card .title{font-size:17px;font-weight:600;margin-top:5px;line-height:1.2;text-wrap:balance}
+.card .sides{font-size:15px;color:var(--card-ink-2);margin-top:2px;line-height:1.25}
+.card .sides b{color:var(--card-ink);font-weight:600}
+.diagram{width:74px;height:74px;display:block;background:rgba(255,255,255,.07);border-radius:16px}
+.tag{position:absolute;right:12px;top:8px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  color:var(--card-ink-2)}
+.card[data-source="estimate"] .tag{color:var(--estimate)}
+.pill{pointer-events:auto;align-self:center;background:var(--surface);backdrop-filter:blur(18px) saturate(1.5);
+  -webkit-backdrop-filter:blur(18px) saturate(1.5);border:1px solid var(--line);border-radius:999px;
+  padding:8px 14px 8px 12px;font-size:13.5px;font-weight:600;display:flex;gap:8px;align-items:center;box-shadow:var(--shadow);
+  position:absolute;top:calc(var(--st) + 10px);opacity:0;transform:translateY(-8px);transition:opacity .25s,transform .25s}
+.pill.show{opacity:1;transform:none}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--ok);display:block}
+.pill[data-state="wait"] i{background:var(--estimate);animation:blink 1.2s infinite}
+.pill[data-state="err"] i{background:var(--yield)}
+@keyframes blink{50%{opacity:.25}}
+
+/* ---------- floating round buttons ---------- */
+.fab{position:absolute;right:12px;bottom:calc(var(--sb) + 172px);width:48px;height:48px;border-radius:50%;
+  background:var(--surface);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
+  border:1px solid var(--line);box-shadow:var(--shadow);display:grid;place-items:center;color:var(--accent);
+  opacity:0;pointer-events:none;transform:scale(.8);transition:opacity .2s,transform .2s}
+.fab.show{opacity:1;pointer-events:auto;transform:none}
+.fab svg{width:22px;height:22px}
+
+/* ---------- bottom: control sheet ---------- */
+.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;padding:0 8px calc(var(--sb) + 8px)}
+.sheet-in{background:var(--surface);backdrop-filter:blur(22px) saturate(1.6);-webkit-backdrop-filter:blur(22px) saturate(1.6);
+  border:1px solid var(--line);border-radius:26px;box-shadow:var(--shadow);padding:14px 14px 10px}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center}
+.speed{width:62px;height:62px;border-radius:50%;background:var(--surface-solid);border:1px solid var(--line);
+  display:grid;place-content:center;text-align:center}
+.speed b{font-family:var(--font-display);font-size:24px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em}
+.speed span{font-size:10px;color:var(--ink-2);font-weight:600;margin-top:2px}
+.mode h1{font-family:var(--font-display);font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em}
+.mode p{margin:3px 0 0;font-size:13px;color:var(--ink-2);line-height:1.3;min-height:17px}
+.switch{width:68px;height:40px;border-radius:999px;background:rgba(120,130,145,.32);position:relative;transition:background .25s}
+.switch::after{content:"";position:absolute;left:3px;top:3px;width:34px;height:34px;border-radius:50%;background:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.28);transition:transform .28s cubic-bezier(.3,1.4,.5,1)}
+.switch[aria-checked="true"]{background:var(--ok)}
+.switch[aria-checked="true"]::after{transform:translateX(28px)}
+.chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.chip{flex:1 1 0;min-width:92px;height:42px;border-radius:14px;background:var(--surface-solid);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;gap:7px;font-size:14px;font-weight:600;color:var(--ink-2);
+  transition:background .2s,color .2s,border-color .2s}
+.chip svg{width:18px;height:18px;flex:none}
+.chip[aria-pressed="true"]{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);
+  background:color-mix(in srgb,var(--accent) 12%,var(--surface-solid))}
+.foot{display:flex;justify-content:space-between;gap:10px;margin-top:9px;font-size:10.5px;color:var(--ink-2)}
+.foot a{color:inherit}
+
+/* ---------- map markers ---------- */
+.puck{width:46px;height:46px;border-radius:50%;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.35);display:grid;place-items:center}
+.puck svg{width:30px;height:30px;display:block}
+.puck.stale{filter:grayscale(1);opacity:.75}
+.jx{width:26px;height:26px;border-radius:50%;background:var(--yield);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);position:relative}
+.jx::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:3px solid var(--yield);animation:ring 1.5s ease-out infinite}
+.jx.estimate{background:var(--estimate)}.jx.estimate::after{border-color:var(--estimate)}
+@keyframes ring{from{transform:scale(1);opacity:.9}to{transform:scale(2.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  .jx::after,.pill[data-state="wait"] i{animation:none}
+  .card,.switch::after,.fab,.pill{transition:none}
+}
+@media (max-height:420px){ .chips{display:none} .fab{bottom:calc(var(--sb) + 110px)} }
+</style>
+</head>
+<body>
+<div id="map" aria-label="Hartă"></div>
+
+<div class="top">
+  <div class="pill" id="pill" data-state="ok"><i></i><span id="pillText">Nicio cedare în față</span></div>
+  <section class="card" id="card" data-kind="give_way" data-source="sign" aria-live="assertive">
+    <div class="sign" id="sign"></div>
+    <div>
+      <div class="dist" id="dist">120 m</div>
+      <div class="title" id="title">Cedează trecerea</div>
+      <div class="sides" id="sides"></div>
+    </div>
+    <svg class="diagram" id="diagram" viewBox="0 0 74 74" aria-hidden="true"></svg>
+    <div class="tag" id="tag">Indicator</div>
+  </section>
+</div>
+
+<button class="fab" id="recenter" aria-label="Recentrează pe poziția mea">
+  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg>
+</button>
+
+<div class="sheet">
+  <div class="sheet-in">
+    <div class="row">
+      <div class="speed" aria-label="Viteză"><b id="spd">–</b><span>km/h</span></div>
+      <div class="mode">
+        <h1>Mod prioritate</h1>
+        <p id="status">Pornește-l ca să afli unde cedezi și din ce parte.</p>
+      </div>
+      <button class="switch" id="toggle" role="switch" aria-checked="false" aria-label="Mod prioritate"></button>
+    </div>
+    <div class="chips">
+      <button class="chip" id="chipVoice" aria-pressed="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+        Voce
+      </button>
+      <button class="chip" id="chipEst" aria-pressed="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19z"/><path d="m9 12 6 5M15 12l-6 5"/></svg>
+        Estimări
+      </button>
+      <button class="chip" id="chipDemo" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5v14l11-7z"/></svg>
+        Demo
+      </button>
+    </div>
+    <div class="foot">
+      <span id="gps">GPS oprit</span>
+      <span>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://openfreemap.org">OpenFreeMap</a></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+/*CORE-START*/
+/* Pure road-priority logic. No DOM, no network: testable on its own. */
+var Core=(function(){
+  var RANK={motorway:7,trunk:6,primary:5,secondary:4,tertiary:3,unclassified:2,residential:2,living_street:1,service:0};
+  var D2R=Math.PI/180;
+  function rankOf(t){var h=t.highway||'';var r=RANK[h.replace('_link','')];if(r===undefined)return null;return h.slice(-5)==='_link'?r-0.5:r;}
+  function norm180(a){a=((a+180)%360+360)%360-180;return a===-180?180:a;}
+  function d2(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+  function brg(a,b){return (Math.atan2(b.x-a.x,b.y-a.y)/D2R+360)%360;}
+
+  function buildGraph(json){
+    var nodes=new Map(),ways=[],lat0=0,lon0=0,n=0,els=json.elements||[];
+    els.forEach(function(e){if(e.type==='node'){nodes.set(e.id,{id:e.id,lat:e.lat,lon:e.lon,tags:e.tags||{},ways:[],_arms:null});lat0+=e.lat;lon0+=e.lon;n++;}});
+    if(!n)return null;
+    lat0/=n;lon0/=n;var kx=111320*Math.cos(lat0*D2R),ky=110540;
+    nodes.forEach(function(nd){nd.x=(nd.lon-lon0)*kx;nd.y=(nd.lat-lat0)*ky;});
+    els.forEach(function(e){
+      if(e.type!=='way'||!e.tags)return;var t=e.tags,r=rankOf(t);
+      if(r===null||t.area==='yes')return;
+      var ns=[];e.nodes.forEach(function(id){var q=nodes.get(id);if(q)ns.push(q);});
+      if(ns.length<2)return;
+      var round=t.junction==='roundabout'||t.junction==='circular',ow=0;
+      if(t.oneway==='yes'||t.oneway==='1'||t.oneway==='true')ow=1;
+      else if(t.oneway==='-1'||t.oneway==='reverse')ow=-1;
+      else if(t.oneway!=='no'&&(round||t.highway==='motorway'))ow=1;
+      var w={id:e.id,tags:t,nodes:ns,rank:r,oneway:ow,round:round,name:t.name||'',minx:1e9,maxx:-1e9,miny:1e9,maxy:-1e9};
+      ns.forEach(function(q,i){q.ways.push({w:w,i:i});
+        if(q.x<w.minx)w.minx=q.x;if(q.x>w.maxx)w.maxx=q.x;if(q.y<w.miny)w.miny=q.y;if(q.y>w.maxy)w.maxy=q.y;});
+      ways.push(w);
+    });
+    return {nodes:nodes,ways:ways,lat0:lat0,lon0:lon0,kx:kx,ky:ky};
+  }
+
+  /* number of road branches meeting at a node */
+  function deg(nd){var c=0;for(var k=0;k<nd.ways.length;k++){var e=nd.ways[k];if(e.i>0)c++;if(e.i<e.w.nodes.length-1)c++;}return c;}
+
+  /* branches ("arms") leaving a node: bearing outward, and whether traffic may arrive/leave along it */
+  function armsOf(nd){
+    if(nd._arms)return nd._arms;var out=[];
+    nd.ways.forEach(function(e){
+      [1,-1].forEach(function(d){
+        var w=e.w,j=e.i+d;if(j<0||j>=w.nodes.length)return;
+        var prev=nd,acc=0,k=j;
+        for(;;){var q=w.nodes[k];acc+=d2(prev,q);prev=q;if(acc>=12||deg(q)>=3)break;var k2=k+d;if(k2<0||k2>=w.nodes.length)break;k=k2;}
+        out.push({w:w,i:e.i,d:d,brg:brg(nd,prev),outbound:w.oneway===0||w.oneway===d,inbound:w.oneway===0||w.oneway===-d});
+      });
+    });
+    return nd._arms=out;
+  }
+
+  /* walk along a road away from nd through arm; fn(node,dist,way,dir) may return a value to stop */
+  function walk(nd,arm,maxDist,fn){
+    var w=arm.w,i=arm.i,d=arm.d,prev=nd,acc=0;
+    for(var guard=0;guard<300;guard++){
+      var j=i+d;
+      if(j<0||j>=w.nodes.length){
+        if(deg(prev)!==2)return null;
+        var o=null,as=armsOf(prev);
+        for(var k=0;k<as.length;k++){var a=as[k];if(!(a.w===w&&a.i===i&&a.d===-d)){o=a;break;}}
+        if(!o)return null;w=o.w;i=o.i;d=o.d;j=i+d;
+      }
+      var q=w.nodes[j];acc+=d2(prev,q);if(acc>maxDist)return null;
+      var r=fn(q,acc,w,d);if(r)return r;
+      if(deg(q)>=3)return null;
+      prev=q;i=j;
+    }
+    return null;
+  }
+
+  /* does traffic arriving at nd along this arm face a yield/stop sign? */
+  function signOnArm(nd,arm,maxDist){
+    return walk(nd,arm,maxDist,function(q,acc,w,d){
+      var h=q.tags.highway;if(h!=='give_way'&&h!=='stop')return null;
+      var dir=q.tags.direction,travel=-d;
+      if(!dir||(dir==='forward'&&travel===1)||(dir==='backward'&&travel===-1))return h;
+      return null;
+    });
+  }
+  function hasSignals(nd){
+    if(nd.tags.highway==='traffic_signals')return true;
+    var as=armsOf(nd);
+    for(var k=0;k<as.length;k++){if(walk(nd,as[k],40,function(q){return q.tags.highway==='traffic_signals';}))return true;}
+    return false;
+  }
+  /* polyline (lon,lat) of the first `len` metres of an arm */
+  function armLine(nd,arm,len){
+    var pts=[[nd.lon,nd.lat]],last=nd,lastAcc=0,w=arm.w,i=arm.i,d=arm.d,acc=0;
+    for(var g=0;g<60;g++){
+      var j=i+d;if(j<0||j>=w.nodes.length)break;
+      var q=w.nodes[j],seg=d2(last,q);
+      if(acc+seg>=len){var t=(len-acc)/(seg||1);pts.push([last.lon+(q.lon-last.lon)*t,last.lat+(q.lat-last.lat)*t]);break;}
+      acc+=seg;pts.push([q.lon,q.lat]);last=q;i=j;if(deg(q)>=3)break;
+    }
+    return pts;
+  }
+
+  /* snap a GPS fix to the road network */
+  function match(g,lat,lon,heading,prev){
+    var x=(lon-g.lon0)*g.kx,y=(lat-g.lat0)*g.ky,best=null;
+    for(var wi=0;wi<g.ways.length;wi++){
+      var w=g.ways[wi];
+      if(x<w.minx-40||x>w.maxx+40||y<w.miny-40||y>w.maxy+40)continue;
+      for(var i=0;i<w.nodes.length-1;i++){
+        var a=w.nodes[i],b=w.nodes[i+1],dx=b.x-a.x,dy=b.y-a.y,L2=dx*dx+dy*dy;if(!L2)continue;
+        var t=((x-a.x)*dx+(y-a.y)*dy)/L2;t=t<0?0:t>1?1:t;
+        var px=a.x+t*dx,py=a.y+t*dy,dd=Math.hypot(x-px,y-py);if(dd>35)continue;
+        var dir=w.oneway===-1?-1:1,ad=0;
+        if(heading!=null){
+          var f=Math.abs(norm180(heading-brg(a,b))),r=180-f,okF=w.oneway!==-1,okR=w.oneway!==1;
+          if(okF&&(!okR||f<=r)){dir=1;ad=f;}else{dir=-1;ad=r;}
+          if(ad>60)continue;
+        }
+        var score=dd+ad*0.6-(prev&&prev.w===w?10:0);
+        if(!best||score<best.score)best={w:w,i:i,t:t,dir:dir,dd:dd,score:score,lat:g.lat0+py/g.ky,lon:g.lon0+px/g.kx,brg:(brg(a,b)+(dir===1?0:180))%360};
+      }
+    }
+    return best;
+  }
+
+  var SIDE_ORDER={left:0,right:1,ahead:2};
+  function makeAlert(q,kind,source,ya,others,dist,note){
+    var sides=[];ya.forEach(function(o){var s=kind==='roundabout'?'left':o.side;if(sides.indexOf(s)<0)sides.push(s);});
+    sides.sort(function(a,b){return SIDE_ORDER[a]-SIDE_ORDER[b];});
+    return {key:q.id+':'+kind,kind:kind,source:source,note:note||'',sides:sides,dist:dist,lat:q.lat,lon:q.lon,
+      diagram:others.map(function(o){return {rel:o.rel,yield:ya.indexOf(o)>=0};}),
+      lines:ya.map(function(o){return armLine(q,o.a,45);})};
+  }
+
+  /* decide whether I must yield at junction q, arriving on way w at index j moving in direction d */
+  function evalJunction(q,w,j,d,mySign,dist,opts){
+    var arms=armsOf(q),mine=null;
+    arms.forEach(function(a){if(a.w===w&&a.i===j&&a.d===-d)mine=a;});
+    if(!mine||w.round)return null;                         /* already on the roundabout: I have priority */
+    var hin=(mine.brg+180)%360;
+    var others=arms.filter(function(a){return a!==mine;}).map(function(a){
+      var rel=norm180(a.brg-hin),ab=Math.abs(rel);
+      return {a:a,rel:rel,side:ab<35?'ahead':ab>150?'behind':rel>0?'right':'left',sign:null};
+    });
+    var inb=others.filter(function(o){return o.a.inbound&&o.side!=='behind';});
+    if(!inb.length)return null;
+    if(hasSignals(q))return null;                          /* traffic lights decide */
+    var ra=others.filter(function(o){return o.a.w.round&&o.a.inbound;});
+    if(ra.length)return makeAlert(q,'roundabout','rule',ra,others,dist);
+    if(q.tags.highway==='mini_roundabout'){
+      var ml=inb.filter(function(o){return o.side==='left';});
+      return makeAlert(q,'roundabout','rule',ml.length?ml:inb,others,dist);
+    }
+    var myService=w.rank===0;
+    var rel=inb.filter(function(o){return myService||o.a.w.rank>0;});
+    if(!rel.length)return null;
+    rel.forEach(function(o){o.sign=signOnArm(q,o.a,50);});
+    /* the arm straight ahead is the opposite approach of my own road: it normally carries the same sign as me */
+    var lr=rel.filter(function(o){return o.side!=='ahead';});
+    if(mySign){
+      var ya=rel.filter(function(o){return !o.sign&&(o.side!=='ahead'||o.a.w.rank>w.rank);});
+      if(!ya.length)ya=lr.length?lr:rel;
+      return makeAlert(q,mySign,'sign',ya,others,dist);
+    }
+    if(lr.some(function(o){return o.sign;}))return null;   /* the side roads have the sign, I have priority */
+    var main=inb.filter(function(o){return o.a.w.rank>0;});
+    if(myService)return main.length?makeAlert(q,'give_way','rule',main,others,dist,'service'):null;
+    if(!opts||opts.estimates!==false){
+      var oppSigned=rel.some(function(o){return o.side==='ahead'&&o.sign&&o.a.w.rank===w.rank;});
+      if(oppSigned&&lr.length)return makeAlert(q,'give_way','estimate',lr,others,dist);
+      var higher=lr.filter(function(o){return o.a.w.rank>=w.rank+1;});
+      if(higher.length)return makeAlert(q,'give_way','estimate',higher,others,dist);
+      var eq=lr.filter(function(o){return o.side==='right'&&o.a.w.rank===w.rank;});
+      if(eq.length&&w.rank<=3)return makeAlert(q,'right_priority','estimate',eq,others,dist);
+    }
+    return null;
+  }
+
+  /* walk forward from the matched position and return the first place where I must yield */
+  function lookAhead(g,m,opts){
+    var maxDist=(opts&&opts.maxDist)||350,w=m.w,d=m.dir;
+    var a=w.nodes[m.i],b=w.nodes[m.i+1],L=d2(a,b);
+    var j=d===1?m.i+1:m.i,acc=d===1?(1-m.t)*L:m.t*L;
+    var pending=null,prevJ=-Infinity,path=[[m.lon,m.lat]];
+    for(var guard=0;guard<400;guard++){
+      var q=w.nodes[j];path.push([q.lon,q.lat]);
+      var h=q.tags.highway;
+      if(h==='give_way'||h==='stop'){
+        var dt=q.tags.direction;
+        if(!dt||(dt==='forward'&&d===1)||(dt==='backward'&&d===-1))pending={kind:h,acc:acc,explicit:!!dt};
+      }
+      if(deg(q)>=3){
+        var sign=null;
+        if(pending){var toJ=acc-pending.acc;if(toJ<=60&&(pending.explicit||toJ<=pending.acc-prevJ))sign=pending.kind;}
+        var al=evalJunction(q,w,j,d,sign,acc,opts);
+        if(al){al.path=path;return al;}
+        pending=null;prevJ=acc;
+      }
+      var nj=j+d;
+      if(nj<0||nj>=w.nodes.length){
+        var hin=null,cands=[],as=armsOf(q);
+        as.forEach(function(x){if(x.w===w&&x.i===j&&x.d===-d)hin=(x.brg+180)%360;else if(x.outbound)cands.push(x);});
+        if(hin===null||!cands.length)return null;
+        cands.sort(function(x,y){return Math.abs(norm180(x.brg-hin))-Math.abs(norm180(y.brg-hin));});
+        if(Math.abs(norm180(cands[0].brg-hin))>50)return null;
+        w=cands[0].w;j=cands[0].i;d=cands[0].d;nj=j+d;
+      }
+      acc+=d2(q,w.nodes[nj]);if(acc>maxDist)return null;j=nj;
+    }
+    return null;
+  }
+
+  /* ---- demo driver: moves a point along the road graph ---- */
+  function simStart(g,lat,lon,heading){
+    var m=match(g,lat,lon,heading==null?null:heading,null);
+    if(!m){
+      var x=(lon-g.lon0)*g.kx,y=(lat-g.lat0)*g.ky,best=null,bd=1e12;
+      g.ways.forEach(function(w){if(w.rank<2||w.rank>4)return;w.nodes.forEach(function(q,i){if(i>=w.nodes.length-1)return;var dd=Math.hypot(q.x-x,q.y-y);if(dd<bd){bd=dd;best={w:w,i:i};}});});
+      if(!best)return null;m={w:best.w,i:best.i,t:0,dir:best.w.oneway===-1?-1:1};
+    }
+    var L=d2(m.w.nodes[m.i],m.w.nodes[m.i+1]);
+    return m.dir===1?{w:m.w,j:m.i,d:1,off:m.t*L}:{w:m.w,j:m.i+1,d:-1,off:(1-m.t)*L};
+  }
+  function simStep(s,metres,rnd){
+    s.off+=metres;
+    for(var guard=0;guard<50;guard++){
+      var a=s.w.nodes[s.j],nb=s.w.nodes[s.j+s.d];
+      if(!nb){s.d=-s.d;continue;}
+      var L=d2(a,nb);
+      if(s.off<L)break;
+      s.off-=L;s.j+=s.d;
+      var q=s.w.nodes[s.j],hin=brg(a,q),end=!s.w.nodes[s.j+s.d];
+      if(deg(q)>=3||end){
+        var cands=armsOf(q).filter(function(x){return x.outbound&&!(x.w===s.w&&x.i===s.j&&x.d===-s.d)&&x.w.rank>0;});
+        var pick=null;
+        if(cands.length){
+          cands.sort(function(x,y){return Math.abs(norm180(x.brg-hin))-Math.abs(norm180(y.brg-hin));});
+          pick=cands[0];
+          if(!end&&rnd&&rnd()<0.3)pick=cands[Math.floor(rnd()*cands.length)];
+          else if(!end)pick=null;
+        }
+        if(pick){s.w=pick.w;s.j=pick.i;s.d=pick.d;}
+        else if(end){if(s.w.oneway===0)s.d=-s.d;else{var any=armsOf(q).filter(function(x){return x.outbound;})[0];if(any){s.w=any.w;s.j=any.i;s.d=any.d;}else{s.off=0;break;}}}
+      }
+    }
+    var p=s.w.nodes[s.j],n2=s.w.nodes[s.j+s.d]||p,LL=d2(p,n2)||1,t=Math.min(1,s.off/LL);
+    return {lat:p.lat+(n2.lat-p.lat)*t,lon:p.lon+(n2.lon-p.lon)*t,heading:brg(p,n2)};
+  }
+
+  return {buildGraph:buildGraph,match:match,lookAhead:lookAhead,simStart:simStart,simStep:simStep,norm180:norm180};
+})();
+/*CORE-END*/
+</script>
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id);};
+var EPS=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+var RADIUS=1200,REFETCH=600;
+var HOME=[26.0864,44.4527]; /* Piața Victoriei, București */
+var S={on:false,voice:true,estimates:true,sim:false,follow:true,pos:null,heading:null,speed:0,acc:null,lastFix:null,
+  graph:null,center:null,fetching:false,failAt:0,m:null,alert:null,alertAt:0,spoken:{},watch:null,simState:null,simTimer:null,wake:null,mapReady:false};
+
+try{var saved=JSON.parse(localStorage.getItem('prioritate')||'{}');if(saved.voice===false)S.voice=false;if(saved.estimates===false)S.estimates=false;}catch(e){}
+function save(){try{localStorage.setItem('prioritate',JSON.stringify({voice:S.voice,estimates:S.estimates}));}catch(e){}}
+
+/* ---------- map ---------- */
+var map=null,puck=null,jx=null,puckEl,jxEl;
+var dark=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches;
+function initMap(style){
+  if(!window.maplibregl){setStatus('Harta nu s-a încărcat. Verifică internetul și reîncarcă pagina.');return;}
+  try{
+    map=new maplibregl.Map({container:'map',style:style,center:HOME,zoom:15.5,pitch:0,attributionControl:false,
+      maxPitch:60,dragRotate:true,pitchWithRotate:false});
+  }catch(e){setStatus('Telefonul nu poate afișa harta, dar avertizările merg în continuare.');map=null;return;}
+  map.on('style.load',function(){S.mapReady=true;addOverlay();redrawOverlay();});
+  map.on('dragstart',function(){if(S.on){S.follow=false;$('recenter').classList.add('show');}});
+  puckEl=document.createElement('div');puckEl.className='puck';
+  puckEl.innerHTML='<svg viewBox="0 0 30 30"><path d="M15 3 25 25l-10-5-10 5z" fill="#1766ff"/></svg>';
+  puck=new maplibregl.Marker({element:puckEl,rotationAlignment:'map',pitchAlignment:'map'});
+  jxEl=document.createElement('div');jxEl.className='jx';
+  jx=new maplibregl.Marker({element:jxEl});
+}
+function iconData(kind){
+  var c=document.createElement('canvas');c.width=c.height=56;var x=c.getContext('2d');
+  x.lineJoin='round';
+  if(kind==='stop'){
+    x.beginPath();for(var k=0;k<8;k++){var a=Math.PI/8+k*Math.PI/4;x[k?'lineTo':'moveTo'](28+24*Math.cos(a),28+24*Math.sin(a));}x.closePath();
+    x.fillStyle='#d92b21';x.fill();x.lineWidth=3;x.strokeStyle='#fff';x.stroke();
+    x.fillStyle='#fff';x.font='bold 15px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText('STOP',28,29);
+  }else{
+    x.beginPath();x.moveTo(5,8);x.lineTo(51,8);x.lineTo(28,49);x.closePath();
+    x.fillStyle='#fff';x.fill();x.lineWidth=8;x.strokeStyle='#d92b21';x.stroke();
+  }
+  return x.getImageData(0,0,56,56);
+}
+var EMPTY={type:'FeatureCollection',features:[]};
+function addOverlay(){
+  if(!map)return;
+  try{
+    if(!map.hasImage('pr-yield'))map.addImage('pr-yield',iconData('give_way'),{pixelRatio:2});
+    if(!map.hasImage('pr-stop'))map.addImage('pr-stop',iconData('stop'),{pixelRatio:2});
+    ['pr-path','pr-arms','pr-signs'].forEach(function(id){if(!map.getSource(id))map.addSource(id,{type:'geojson',data:EMPTY});});
+    if(!map.getLayer('pr-path-l'))map.addLayer({id:'pr-path-l',type:'line',source:'pr-path',layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':'#1766ff','line-width':9,'line-opacity':.85}});
+    if(!map.getLayer('pr-arms-g'))map.addLayer({id:'pr-arms-g',type:'line',source:'pr-arms',layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':['get','color'],'line-width':20,'line-opacity':.28,'line-blur':4}});
+    if(!map.getLayer('pr-arms-l'))map.addLayer({id:'pr-arms-l',type:'line',source:'pr-arms',layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':['get','color'],'line-width':8}});
+    if(!map.getLayer('pr-signs-l'))map.addLayer({id:'pr-signs-l',type:'symbol',source:'pr-signs',minzoom:15,
+      layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],15,.5,18,.85],'icon-allow-overlap':true}});
+  }catch(e){}
+}
+function setSrc(id,data){if(map&&S.mapReady){var s=map.getSource(id);if(s)s.setData(data);}}
+function redrawOverlay(){
+  var feats=[];
+  if(S.on&&S.graph){S.graph.nodes.forEach(function(q){var h=q.tags.highway;
+    if(h==='give_way'||h==='stop')feats.push({type:'Feature',properties:{icon:h==='stop'?'pr-stop':'pr-yield'},geometry:{type:'Point',coordinates:[q.lon,q.lat]}});});}
+  setSrc('pr-signs',{type:'FeatureCollection',features:feats});
+  drawAlertOnMap();
+}
+function drawAlertOnMap(){
+  var a=S.on?S.alert:null;
+  if(!a){setSrc('pr-arms',EMPTY);setSrc('pr-path',EMPTY);if(jx)jx.remove();return;}
+  var col=a.source==='estimate'?'#e08a00':'#e2372d';
+  setSrc('pr-arms',{type:'FeatureCollection',features:a.lines.map(function(l){return {type:'Feature',properties:{color:col},geometry:{type:'LineString',coordinates:l}};})});
+  setSrc('pr-path',{type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:a.path}}]});
+  if(jx&&map){jxEl.className='jx'+(a.source==='estimate'?' estimate':'');jx.setLngLat([a.lon,a.lat]).addTo(map);}
+}
+
+/* ---------- text ---------- */
+var SIDE={left:'stânga',right:'dreapta',ahead:'față'};
+function sidesText(sides){
+  var p=sides.map(function(s){return 'din '+SIDE[s];});
+  return p.length>1?p.slice(0,-1).join(', ')+' și '+p[p.length-1]:p[0]||'';
+}
+function describe(a){
+  var st=sidesText(a.sides),html=st.replace(/(stânga|dreapta|față)/g,'<b>$1</b>');
+  if(a.kind==='stop')return {title:'Stop',sub:'Oprește și cedează celor '+html,say:'oprire la stop. Acordă prioritate celor '+st+'.',tag:'Indicator'};
+  if(a.kind==='roundabout')return {title:'Sens giratoriu',sub:'Cedează celor din <b>stânga</b>, aflați în giratoriu',say:'sens giratoriu. Cedează celor din stânga.',tag:'Regulă'};
+  if(a.kind==='right_priority')return {title:'Prioritate de dreapta',sub:'Fără indicator în hartă. Cedează celor din <b>dreapta</b>',say:'intersecție nesemnalizată. Prioritate de dreapta.',tag:'Estimare'};
+  if(a.source==='estimate')return {title:'Probabil cedezi',sub:'Drum mai important. Vin '+html,say:'probabil cedezi trecerea. Vin '+st+'.',tag:'Estimare'};
+  if(a.note==='service')return {title:'Cedează trecerea',sub:'Ieși pe drumul public. Vin '+html,say:'ieși pe drumul public. Cedează celor '+st+'.',tag:'Regulă'};
+  return {title:'Cedează trecerea',sub:'Vin '+html,say:'cedează trecerea. Vin '+st+'.',tag:'Indicator'};
+}
+function fmtDist(d){if(d<25)return 'Acum';if(d<100)return Math.round(d/5)*5+' m';return Math.round(d/10)*10+' m';}
+var SIGNS={
+  give_way:'<svg viewBox="0 0 58 58"><path d="M6 9h46L29 50z" fill="#fff" stroke="#e2372d" stroke-width="7" stroke-linejoin="round"/></svg>',
+  stop:'<svg viewBox="0 0 58 58"><path d="M19 4h20l15 15v20L39 54H19L4 39V19z" fill="#e2372d" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><text x="29" y="35" text-anchor="middle" font-size="15" font-weight="800" fill="#fff" font-family="Arial,sans-serif">STOP</text></svg>',
+  roundabout:'<svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="25" fill="#1766ff" stroke="#fff" stroke-width="3"/><g fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><path d="M29 17a12 12 0 1 1-10.4 6"/><path d="m13 21 6 2-1 6"/></g></svg>',
+  right_priority:'<svg viewBox="0 0 58 58"><path d="M29 7 53 49H5z" fill="#fff" stroke="#e08a00" stroke-width="6" stroke-linejoin="round"/><path d="m22 28 14 14M36 28 22 42" stroke="#12171e" stroke-width="4.5" stroke-linecap="round"/></svg>'
+};
+function diagramSVG(a){
+  var c=37,out='',col=a.source==='estimate'?'#ffad33':'#ff5449';
+  a.diagram.forEach(function(o){
+    var r=o.rel*Math.PI/180,x=c+29*Math.sin(r),y=c-29*Math.cos(r);
+    out+='<line x1="'+c+'" y1="'+c+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="'+(o.yield?col:'rgba(255,255,255,.3)')+'" stroke-width="'+(o.yield?9:7)+'" stroke-linecap="round"/>';
+  });
+  a.diagram.forEach(function(o){
+    if(!o.yield)return;var r=o.rel*Math.PI/180,s=Math.sin(r),k=-Math.cos(r);
+    var tx=c+13*s,ty=c+13*k,bx=c+23*s,by=c+23*k,px=-k*5.5,py=s*5.5;
+    out+='<path d="M'+tx.toFixed(1)+' '+ty.toFixed(1)+'L'+(bx+px).toFixed(1)+' '+(by+py).toFixed(1)+'L'+(bx-px).toFixed(1)+' '+(by-py).toFixed(1)+'z" fill="#12171e"/>';
+  });
+  out+='<line x1="'+c+'" y1="'+c+'" x2="'+c+'" y2="68" stroke="#fff" stroke-width="9" stroke-linecap="round"/>';
+  out+='<path d="M'+c+' 44l6 10h-12z" fill="#1766ff"/>';
+  return out;
+}
+
+/* ---------- UI ---------- */
+var shownKey=null;
+function setStatus(t){$('status').textContent=t;}
+function setPill(text,state){var p=$('pill');$('pillText').textContent=text;p.dataset.state=state||'ok';}
+function render(){
+  var a=S.on?S.alert:null,card=$('card'),pill=$('pill');
+  $('toggle').setAttribute('aria-checked',S.on?'true':'false');
+  $('chipVoice').setAttribute('aria-pressed',S.voice?'true':'false');
+  $('chipEst').setAttribute('aria-pressed',S.estimates?'true':'false');
+  $('chipDemo').setAttribute('aria-pressed',S.sim?'true':'false');
+  $('spd').textContent=S.on&&S.pos?Math.round(S.speed*3.6):'–';
+  if(a){
+    var d=describe(a);
+    if(shownKey!==a.key){
+      shownKey=a.key;card.dataset.kind=a.kind;card.dataset.source=a.source;
+      $('sign').innerHTML=SIGNS[a.kind]||SIGNS.give_way;$('title').textContent=d.title;$('sides').innerHTML=d.sub;
+      $('tag').textContent=d.tag;$('diagram').innerHTML=diagramSVG(a);
+    }
+    $('dist').textContent=fmtDist(a.dist);
+    card.classList.add('show');pill.classList.remove('show');
+  }else{
+    shownKey=null;card.classList.remove('show');
+    pill.classList.toggle('show',S.on);
+  }
+  if(!S.on){$('gps').textContent='GPS oprit';return;}
+  $('gps').textContent=S.sim?'Demo, fără GPS':S.acc!=null?'GPS ±'+Math.round(S.acc)+' m':'Caut semnal GPS…';
+  if(!S.pos)setPill(S.sim?'Pregătesc demo…':'Caut poziția ta…','wait');
+  else if(!S.graph)setPill(S.failAt?'Nu pot încărca drumurile':'Încarc drumurile din zonă…',S.failAt?'err':'wait');
+  else if(!S.m)setPill('Nu ești pe un drum cunoscut','wait');
+  else setPill('Nicio cedare în față','ok');
+}
+
+/* ---------- voice ---------- */
+var actx=null;
+function chime(){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();
+    [[880,0],[660,.16]].forEach(function(n){var o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=n[0];
+      var t=actx.currentTime+n[1];g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.22,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.22);
+      o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+.25);});
+  }catch(e){}
+}
+function speak(text,quiet){
+  if(!S.voice)return;
+  if(!quiet)chime();
+  try{
+    if(!window.speechSynthesis)return;
+    var u=new SpeechSynthesisUtterance(text);u.lang='ro-RO';u.rate=1.05;
+    var v=speechSynthesis.getVoices().filter(function(x){return /^ro/i.test(x.lang);})[0];if(v)u.voice=v;
+    speechSynthesis.cancel();setTimeout(function(){try{speechSynthesis.speak(u);}catch(e){}},quiet?0:320);
+  }catch(e){}
+}
+function announce(a){
+  var now=Date.now(),lead=Math.min(250,Math.max(80,S.speed*8));
+  if(a.dist>lead)return;
+  if(S.spoken[a.key]&&now-S.spoken[a.key]<45000)return;
+  S.spoken[a.key]=now;
+  var d=describe(a),r=Math.round(a.dist/10)*10;
+  speak((a.dist<40?'Acum, ':'Peste '+r+' de metri, ')+d.say);
+}
+
+/* ---------- data ---------- */
+function distM(a,b){var kx=111320*Math.cos(a[1]*Math.PI/180);return Math.hypot((a[0]-b[0])*kx,(a[1]-b[1])*110540);}
+function needData(lon,lat){
+  if(S.fetching)return;
+  if(S.center&&distM(S.center,[lon,lat])<REFETCH)return;
+  if(S.failAt&&Date.now()-S.failAt<12000)return;
+  S.fetching=true;render();
+  var q='[out:json][timeout:25];way(around:'+RADIUS+','+lat.toFixed(5)+','+lon.toFixed(5)+')[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"];out body;>;out body qt;';
+  var i=0;
+  (function attempt(){
+    if(i>=EPS.length){S.fetching=false;S.failAt=Date.now();setStatus('Nu pot încărca drumurile. Reîncerc singur în câteva secunde.');render();return;}
+    var ctl=window.AbortController?new AbortController():null,to=setTimeout(function(){if(ctl)ctl.abort();},22000);
+    fetch(EPS[i++],{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl?ctl.signal:undefined})
+      .then(function(r){if(!r.ok)throw new Error('http');return r.json();})
+      .then(function(j){clearTimeout(to);var g=Core.buildGraph(j);if(!g||!g.ways.length)throw new Error('empty');
+        S.graph=g;S.center=[lon,lat];S.fetching=false;S.failAt=0;S.m=null;
+        if(S.sim&&S.pos)S.simState=Core.simStart(g,S.pos[1],S.pos[0],S.heading);
+        if(S.on)setStatus(S.sim?'Demo pornit: mașina merge singură pe hartă.':'Activ. Te anunț înainte de fiecare cedare.');
+        redrawOverlay();render();})
+      .catch(function(){clearTimeout(to);attempt();});
+  })();
+}
+
+/* ---------- position pipeline ---------- */
+function onFix(lon,lat,heading,speed,acc){
+  if(!S.on)return;
+  var prev=S.pos;
+  if(heading==null||isNaN(heading)||speed<1){
+    if(prev&&distM(prev,[lon,lat])>4){var kx=Math.cos(lat*Math.PI/180);heading=(Math.atan2((lon-prev[0])*kx,lat-prev[1])*180/Math.PI+360)%360;}
+    else heading=S.heading;
+  }
+  S.pos=[lon,lat];S.heading=heading;S.speed=speed||0;S.acc=acc;S.lastFix=Date.now();
+  needData(lon,lat);
+  var alert=null;
+  if(S.graph){
+    S.m=Core.match(S.graph,lat,lon,heading,S.m);
+    if(S.m){
+      var al=Core.lookAhead(S.graph,S.m,{estimates:S.estimates,maxDist:380});
+      if(al&&al.dist<=Math.max(220,S.speed*14))alert=al;
+    }
+  }
+  var now=Date.now();
+  if(alert){S.alert=alert;S.alertAt=now;announce(alert);}
+  else if(S.alert&&now-S.alertAt>2500)S.alert=null;
+  var show=S.m&&S.m.dd<18?[S.m.lon,S.m.lat]:[lon,lat];
+  if(map&&puck){
+    puck.setLngLat(show).addTo(map);if(heading!=null)puck.setRotation(heading);
+    puckEl.classList.remove('stale');
+    if(S.follow){
+      var z=S.speed<8?17.3:S.speed<16?16.8:16.2,h=map.getContainer().clientHeight;
+      map.easeTo({center:show,bearing:heading!=null?heading:map.getBearing(),pitch:52,zoom:z,offset:[0,h*0.17],
+        duration:S.sim?320:1000,easing:function(t){return t;}});
+    }
+  }
+  drawAlertOnMap();render();
+}
+function geoOk(p){if(S.sim)return;var c=p.coords;onFix(c.longitude,c.latitude,c.heading,c.speed||0,c.accuracy);}
+function geoErr(e){
+  if(S.sim)return;
+  setStatus(e&&e.code===1?'Permite accesul la locație pentru această pagină, apoi pornește din nou.':'Nu găsesc semnal GPS. Verifică dacă locația e pornită.');
+  if(e&&e.code===1)stop();
+}
+function wake(){try{if(navigator.wakeLock)navigator.wakeLock.request('screen').then(function(w){S.wake=w;}).catch(function(){});}catch(e){}}
+function start(){
+  S.on=true;S.follow=true;S.alert=null;S.spoken={};$('recenter').classList.remove('show');
+  wake();
+  if(S.sim)startSim();
+  else if(!navigator.geolocation||!window.isSecureContext){setStatus('Locația merge doar pe o adresă https. Încearcă Demo sau vezi pașii de instalare.');}
+  else{setStatus('Activ. Caut poziția ta…');
+    S.watch=navigator.geolocation.watchPosition(geoOk,geoErr,{enableHighAccuracy:true,maximumAge:1000,timeout:20000});}
+  speak('Mod prioritate pornit',true);
+  redrawOverlay();render();
+}
+function stop(){
+  S.on=false;S.alert=null;S.m=null;S.pos=null;S.acc=null;
+  if(S.watch!=null){navigator.geolocation.clearWatch(S.watch);S.watch=null;}
+  stopSim();S.sim=false;
+  try{if(S.wake){S.wake.release();S.wake=null;}}catch(e){}
+  try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}
+  if(puck)puck.remove();
+  if(map)map.easeTo({pitch:0,bearing:0,duration:600});
+  setStatus('Pornește-l ca să afli unde cedezi și din ce parte.');
+  redrawOverlay();render();
+}
+/* ---------- demo ---------- */
+function startSim(){
+  stopSim();
+  var c=map?map.getCenter():{lng:HOME[0],lat:HOME[1]};
+  S.pos=[c.lng,c.lat];S.heading=null;S.speed=0;S.acc=5;S.simState=null;S.center=S.graph?S.center:null;
+  setStatus('Demo: încarc drumurile din zona de pe ecran…');
+  needData(c.lng,c.lat);
+  if(S.graph)S.simState=Core.simStart(S.graph,c.lat,c.lng,null);
+  S.simTimer=setInterval(function(){
+    if(!S.simState){if(S.graph&&S.pos)S.simState=Core.simStart(S.graph,S.pos[1],S.pos[0],S.heading);if(!S.simState){if(S.pos)needData(S.pos[0],S.pos[1]);render();return;}}
+    var v=11,p=Core.simStep(S.simState,v*0.3,Math.random);
+    onFix(p.lon,p.lat,p.heading,v,5);
+  },300);
+}
+function stopSim(){if(S.simTimer){clearInterval(S.simTimer);S.simTimer=null;}S.simState=null;}
+
+/* ---------- wiring ---------- */
+$('toggle').addEventListener('click',function(){if(S.on)stop();else start();});
+$('chipVoice').addEventListener('click',function(){S.voice=!S.voice;save();render();if(S.voice)speak('Voce pornită',true);else{try{speechSynthesis.cancel();}catch(e){}}});
+$('chipEst').addEventListener('click',function(){S.estimates=!S.estimates;save();
+  setStatus(S.estimates?'Estimări pornite: te anunț și unde harta nu are indicator.':'Doar indicatoare și reguli sigure din hartă.');render();});
+$('chipDemo').addEventListener('click',function(){
+  if(S.sim){stop();return;}
+  if(S.on)stop();
+  S.sim=true;start();
+});
+$('recenter').addEventListener('click',function(){S.follow=true;this.classList.remove('show');if(S.pos&&map)map.easeTo({center:S.pos,zoom:17,duration:500});});
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&S.on)wake();});
+setInterval(function(){if(S.on&&!S.sim&&S.lastFix&&Date.now()-S.lastFix>8000&&puckEl)puckEl.classList.add('stale');},3000);
+try{if(window.speechSynthesis)speechSynthesis.getVoices();}catch(e){}
+
+var LIGHT='https://tiles.openfreemap.org/styles/liberty',DARK='https://tiles.openfreemap.org/styles/dark';
+if(dark){fetch(DARK).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){initMap(j);}).catch(function(){initMap(LIGHT);});}
+else initMap(LIGHT);
+render();
+window.__app={S:S,onFix:onFix};
+})();
+</script>
+</body>
+</html>
