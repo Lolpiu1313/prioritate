@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="Prioritate">
 <meta name="theme-color" content="#101418">
 <title>Prioritate</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <style>
 /* Layout idea: full-bleed map; one maneuver card pinned top, one control sheet pinned bottom. */
@@ -61,14 +63,25 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 /* ---------- top: maneuver card ---------- */
 .top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 10px) 12px 0;pointer-events:none;
   display:flex;flex-direction:column;gap:8px;align-items:stretch;max-width:520px;margin:0 auto}
-.card{pointer-events:auto;background:var(--card);color:var(--card-ink);border-radius:22px;box-shadow:var(--shadow);
+.nav{pointer-events:auto;background:var(--surface);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
+  border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:10px 14px 10px 12px;display:none;
+  grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.nav.show{display:grid}
+.nav svg{width:36px;height:36px;color:var(--accent);display:block}
+.nav .nd{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.nav .nn{font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.nav .mid{min-width:0}
+.nav .eta{text-align:right;font-size:12.5px;color:var(--ink-2);font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums}
+.nav .eta b{display:block;color:var(--ink);font-size:15px}
+.card{pointer-events:none;background:var(--card);color:var(--card-ink);border-radius:22px;box-shadow:var(--shadow);
   padding:14px 14px 14px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;
   position:relative;overflow:hidden;transform:translateY(-140%);opacity:0;
   transition:transform .42s cubic-bezier(.2,.9,.25,1),opacity .25s}
-.card.show{transform:none;opacity:1}
+.card.show{transform:none;opacity:1;pointer-events:auto}
 .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--yield)}
 .card[data-source="estimate"]::before{background:var(--estimate)}
-.card[data-kind="roundabout"]::before{background:var(--accent)}
+.card[data-kind="roundabout"]::before,.card[data-source="info"]::before{background:var(--accent)}
+.card .sides span{display:block;margin-top:3px;font-size:13px}
 .sign{width:58px;height:58px;display:grid;place-items:center}
 .sign svg{width:58px;height:58px;display:block}
 .card .dist{font-family:var(--font-display);font-size:34px;line-height:1;font-weight:700;letter-spacing:-.02em;
@@ -91,7 +104,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 @keyframes blink{50%{opacity:.25}}
 
 /* ---------- floating round buttons ---------- */
-.fab{position:absolute;right:12px;bottom:calc(var(--sb) + 172px);width:48px;height:48px;border-radius:50%;
+.fab{position:absolute;right:12px;bottom:calc(var(--sb) + 230px);width:48px;height:48px;border-radius:50%;
   background:var(--surface);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
   border:1px solid var(--line);box-shadow:var(--shadow);display:grid;place-items:center;color:var(--accent);
   opacity:0;pointer-events:none;transform:scale(.8);transition:opacity .2s,transform .2s}
@@ -116,12 +129,34 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 .switch[aria-checked="true"]{background:var(--ok)}
 .switch[aria-checked="true"]::after{transform:translateX(28px)}
 .chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-.chip{flex:1 1 0;min-width:92px;height:42px;border-radius:14px;background:var(--surface-solid);border:1px solid var(--line);
-  display:flex;align-items:center;justify-content:center;gap:7px;font-size:14px;font-weight:600;color:var(--ink-2);
+.chip{flex:1 1 0;min-width:0;height:42px;border-radius:14px;background:var(--surface-solid);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--ink-2);
   transition:background .2s,color .2s,border-color .2s}
 .chip svg{width:18px;height:18px;flex:none}
 .chip[aria-pressed="true"]{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);
   background:color-mix(in srgb,var(--accent) 12%,var(--surface-solid))}
+[hidden]{display:none!important}
+.search{display:flex;gap:8px;align-items:center;height:46px;border-radius:14px;background:var(--surface-solid);border:1px solid var(--line);
+  padding:0 6px 0 12px;margin-bottom:12px}
+.search>svg{width:18px;height:18px;flex:none;color:var(--ink-2)}
+.search input{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:16px;color:var(--ink);outline:0;
+  -webkit-user-select:text;user-select:text;-webkit-appearance:none;appearance:none}
+.search input::placeholder{color:var(--ink-2)}
+.search input::-webkit-search-cancel-button{display:none}
+.search:focus-within{border-color:var(--accent)}
+.waze{height:34px;padding:0 12px;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:13px;
+  display:flex;align-items:center;gap:5px;text-decoration:none;flex:none}
+.waze svg{width:14px;height:14px}
+.waze.alt{background:none;color:var(--accent);border:1.5px solid var(--accent);padding:0 9px}
+.x{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--ink-2);flex:none}
+.x svg{width:16px;height:16px}
+.results{list-style:none;margin:0 0 12px;padding:4px;max-height:34vh;overflow:auto;border-radius:14px;background:var(--surface-solid);border:1px solid var(--line)}
+.results button{display:block;width:100%;text-align:left;padding:10px 10px;border-radius:10px;font-size:14.5px;font-weight:600;line-height:1.25}
+.results button:active{background:var(--line)}
+.results small{display:block;color:var(--ink-2);font-size:12px;font-weight:400;margin-top:2px}
+.results .none{padding:10px;font-size:13.5px;color:var(--ink-2)}
+.destpin{width:22px;height:22px;border-radius:50% 50% 50% 0;background:var(--accent);border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.jx.info{background:var(--accent)}.jx.info::after{border-color:var(--accent)}
 .foot{display:flex;justify-content:space-between;gap:10px;margin-top:9px;font-size:10.5px;color:var(--ink-2)}
 .foot a{color:inherit}
 
@@ -137,7 +172,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
   .jx::after,.pill[data-state="wait"] i{animation:none}
   .card,.switch::after,.fab,.pill{transition:none}
 }
-@media (max-height:420px){ .chips{display:none} .fab{bottom:calc(var(--sb) + 110px)} }
+@media (max-height:480px){ .chips,.search{display:none} .fab{bottom:calc(var(--sb) + 110px)} }
 </style>
 </head>
 <body>
@@ -145,6 +180,11 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 
 <div class="top">
   <div class="pill" id="pill" data-state="ok"><i></i><span id="pillText">Nicio cedare în față</span></div>
+  <div class="nav" id="nav">
+    <div id="navIcon"></div>
+    <div class="mid"><div class="nd" id="navDist">–</div><div class="nn" id="navName"></div></div>
+    <div class="eta"><b id="navLeft">–</b><span id="navEta"></span></div>
+  </div>
   <section class="card" id="card" data-kind="give_way" data-source="sign" aria-live="assertive">
     <div class="sign" id="sign"></div>
     <div>
@@ -163,6 +203,16 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 
 <div class="sheet">
   <div class="sheet-in">
+    <form class="search" id="search" autocomplete="off">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.800-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      <input id="q" type="search" enterkeyhint="search" placeholder="Unde mergi? Adresă sau link" aria-label="Destinație">
+      <a class="waze" id="waze" target="_blank" rel="noopener" hidden>Waze
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5h11v11M19 5 6 18"/></svg></a>
+      <a class="waze alt" id="gmaps" target="_blank" rel="noopener" hidden>Maps</a>
+      <button type="button" class="x" id="clear" aria-label="Șterge destinația" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </form>
+    <ul class="results" id="results" hidden></ul>
     <div class="row">
       <div class="speed" aria-label="Viteză"><b id="spd">–</b><span>km/h</span></div>
       <div class="mode">
@@ -172,18 +222,10 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
       <button class="switch" id="toggle" role="switch" aria-checked="false" aria-label="Mod prioritate"></button>
     </div>
     <div class="chips">
-      <button class="chip" id="chipVoice" aria-pressed="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
-        Voce
-      </button>
-      <button class="chip" id="chipEst" aria-pressed="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19z"/><path d="m9 12 6 5M15 12l-6 5"/></svg>
-        Estimări
-      </button>
-      <button class="chip" id="chipDemo" aria-pressed="false">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5v14l11-7z"/></svg>
-        Demo
-      </button>
+      <button class="chip" id="chipVoice" aria-pressed="true">Voce</button>
+      <button class="chip" id="chipEst" aria-pressed="true">Estimări</button>
+      <button class="chip" id="chipSig" aria-pressed="true">Semafoare</button>
+      <button class="chip" id="chipDemo" aria-pressed="false">Demo</button>
     </div>
     <div class="foot">
       <span id="gps">GPS oprit</span>
@@ -314,56 +356,112 @@ var Core=(function(){
   }
 
   var SIDE_ORDER={left:0,right:1,ahead:2};
-  function makeAlert(q,kind,source,ya,others,dist,note){
-    var sides=[];ya.forEach(function(o){var s=kind==='roundabout'?'left':o.side;if(sides.indexOf(s)<0)sides.push(s);});
+  function makeAlert(q,kind,source,ya,others,dist,note,X){
+    X=X||{};var sides=[];ya.forEach(function(o){var s=kind==='roundabout'?'left':o.side;if(sides.indexOf(s)<0)sides.push(s);});
     sides.sort(function(a,b){return SIDE_ORDER[a]-SIDE_ORDER[b];});
-    return {key:q.id+':'+kind,kind:kind,source:source,note:note||'',sides:sides,dist:dist,lat:q.lat,lon:q.lon,
-      diagram:others.map(function(o){return {rel:o.rel,yield:ya.indexOf(o)>=0};}),
+    return {key:q.id+':'+kind+':'+(X.move||''),kind:kind,source:source,note:note||'',sides:sides,dist:dist,lat:q.lat,lon:q.lon,
+      move:X.move||null,leftExtra:!!X.leftExtra,
+      diagram:others.map(function(o){return {rel:o.rel,yield:ya.indexOf(o)>=0,exit:X.exitArm===o.a};}),
       lines:ya.map(function(o){return armLine(q,o.a,45);})};
   }
 
-  /* decide whether I must yield at junction q, arriving on way w at index j moving in direction d */
-  function evalJunction(q,w,j,d,mySign,dist,opts){
+  /* decide whether I must yield at junction q, arriving on way w at index j moving in direction d.
+     exitArm (optional) is the branch my route leaves by: it tells whether I go straight, left or right. */
+  function evalJunction(q,w,j,d,mySign,dist,opts,exitArm){
+    opts=opts||{};
     var arms=armsOf(q),mine=null;
     arms.forEach(function(a){if(a.w===w&&a.i===j&&a.d===-d)mine=a;});
     if(!mine||w.round)return null;                         /* already on the roundabout: I have priority */
-    var hin=(mine.brg+180)%360;
+    var hin=(mine.brg+180)%360,move=null;
     var others=arms.filter(function(a){return a!==mine;}).map(function(a){
-      var rel=norm180(a.brg-hin),ab=Math.abs(rel);
-      return {a:a,rel:rel,side:ab<35?'ahead':ab>150?'behind':rel>0?'right':'left',sign:null};
+      var rel=norm180(a.brg-hin),ab=Math.abs(rel),side=ab<35?'ahead':ab>150?'behind':rel>0?'right':'left';
+      if(a===exitArm)move=side==='ahead'?'straight':side==='behind'?'uturn':side;
+      return {a:a,rel:rel,side:side,sign:null};
     });
+    var X={move:move,exitArm:exitArm||null,leftExtra:false};
     var inb=others.filter(function(o){return o.a.inbound&&o.side!=='behind';});
     if(!inb.length)return null;
-    if(hasSignals(q))return null;                          /* traffic lights decide */
-    var ra=others.filter(function(o){return o.a.w.round&&o.a.inbound;});
-    if(ra.length)return makeAlert(q,'roundabout','rule',ra,others,dist);
-    if(q.tags.highway==='mini_roundabout'){
-      var ml=inb.filter(function(o){return o.side==='left';});
-      return makeAlert(q,'roundabout','rule',ml.length?ml:inb,others,dist);
-    }
     var myService=w.rank===0;
     var rel=inb.filter(function(o){return myService||o.a.w.rank>0;});
+    var onc=rel.filter(function(o){return o.side==='ahead';});   /* oncoming traffic: matters when I turn left */
+    var lr=rel.filter(function(o){return o.side!=='ahead';});
+    function fin(kind,source,ya,note){
+      if(move==='left')onc.forEach(function(o){if(ya.indexOf(o)<0)ya=ya.concat([o]);});
+      else if(move==='right'){var l=ya.filter(function(o){return o.side==='left'||(o.side==='ahead'&&o.a.w.rank>w.rank);});if(l.length)ya=l;}
+      X.leftExtra=move===null&&onc.some(function(o){return ya.indexOf(o)<0;});
+      return makeAlert(q,kind,source,ya,others,dist,note,X);
+    }
+    if(hasSignals(q)){                                     /* traffic lights decide */
+      if(opts.signals===false)return null;
+      X.leftExtra=move===null&&onc.length>0;
+      return makeAlert(q,'signals','info',move==='left'?onc:[],others,dist,'',X);
+    }
+    var ra=others.filter(function(o){return o.a.w.round&&o.a.inbound;});
+    if(ra.length)return makeAlert(q,'roundabout','rule',ra,others,dist,'',X);
+    if(q.tags.highway==='mini_roundabout'){
+      var ml=inb.filter(function(o){return o.side==='left';});
+      return makeAlert(q,'roundabout','rule',ml.length?ml:inb,others,dist,'',X);
+    }
     if(!rel.length)return null;
     rel.forEach(function(o){o.sign=signOnArm(q,o.a,50);});
     /* the arm straight ahead is the opposite approach of my own road: it normally carries the same sign as me */
-    var lr=rel.filter(function(o){return o.side!=='ahead';});
     if(mySign){
       var ya=rel.filter(function(o){return !o.sign&&(o.side!=='ahead'||o.a.w.rank>w.rank);});
       if(!ya.length)ya=lr.length?lr:rel;
-      return makeAlert(q,mySign,'sign',ya,others,dist);
+      return fin(mySign,'sign',ya);
     }
-    if(lr.some(function(o){return o.sign;}))return null;   /* the side roads have the sign, I have priority */
-    var main=inb.filter(function(o){return o.a.w.rank>0;});
-    if(myService)return main.length?makeAlert(q,'give_way','rule',main,others,dist,'service'):null;
-    if(!opts||opts.estimates!==false){
-      var oppSigned=rel.some(function(o){return o.side==='ahead'&&o.sign&&o.a.w.rank===w.rank;});
-      if(oppSigned&&lr.length)return makeAlert(q,'give_way','estimate',lr,others,dist);
-      var higher=lr.filter(function(o){return o.a.w.rank>=w.rank+1;});
-      if(higher.length)return makeAlert(q,'give_way','estimate',higher,others,dist);
-      var eq=lr.filter(function(o){return o.side==='right'&&o.a.w.rank===w.rank;});
-      if(eq.length&&w.rank<=3)return makeAlert(q,'right_priority','estimate',eq,others,dist);
+    if(!lr.some(function(o){return o.sign;})){             /* otherwise the side roads have the sign, I have priority */
+      var main=inb.filter(function(o){return o.a.w.rank>0;});
+      if(myService)return main.length?fin('give_way','rule',main,'service'):null;
+      if(opts.estimates!==false){
+        var oppSigned=rel.some(function(o){return o.side==='ahead'&&o.sign&&o.a.w.rank===w.rank;});
+        if(oppSigned&&lr.length)return fin('give_way','estimate',lr);
+        var higher=lr.filter(function(o){return o.a.w.rank>=w.rank+1;});
+        if(higher.length)return fin('give_way','estimate',higher);
+        var eq=lr.filter(function(o){return o.side==='right'&&o.a.w.rank===w.rank;});
+        if(eq.length&&w.rank<=3&&move!=='right')return fin('right_priority','estimate',eq);
+      }
     }
+    /* I have priority over the side roads, but a left turn still crosses oncoming traffic */
+    if(move==='left'&&onc.length)return makeAlert(q,'left_turn','rule',onc,others,dist,'',X);
     return null;
+  }
+
+  /* ---- route helpers: the route is a polyline in the graph's local metres ---- */
+  function routeXY(g,coords){
+    var x=[],y=[],cum=[0];
+    for(var i=0;i<coords.length;i++){x.push((coords[i][0]-g.lon0)*g.kx);y.push((coords[i][1]-g.lat0)*g.ky);if(i)cum.push(cum[i-1]+Math.hypot(x[i]-x[i-1],y[i]-y[i-1]));}
+    return {x:x,y:y,cum:cum};
+  }
+  function projRoute(R,px,py,sMin,sMax){
+    var best=null;
+    for(var i=0;i<R.x.length-1;i++){
+      if(R.cum[i+1]<sMin)continue;if(R.cum[i]>sMax)break;
+      var dx=R.x[i+1]-R.x[i],dy=R.y[i+1]-R.y[i],L2=dx*dx+dy*dy,t=L2?((px-R.x[i])*dx+(py-R.y[i])*dy)/L2:0;t=t<0?0:t>1?1:t;
+      var dd=Math.hypot(px-(R.x[i]+t*dx),py-(R.y[i]+t*dy));
+      if(!best||dd<best.off)best={off:dd,s:R.cum[i]+t*Math.sqrt(L2)};
+    }
+    return best;
+  }
+  function pointAt(R,s){
+    var n=R.cum.length;if(s<=0)return {x:R.x[0],y:R.y[0]};
+    for(var i=0;i<n-1;i++){if(R.cum[i+1]>=s){var L=R.cum[i+1]-R.cum[i]||1,t=(s-R.cum[i])/L;return {x:R.x[i]+(R.x[i+1]-R.x[i])*t,y:R.y[i]+(R.y[i+1]-R.y[i])*t};}}
+    return {x:R.x[n-1],y:R.y[n-1]};
+  }
+  /* how far along the route am I, and how far off it */
+  function progress(g,R,lat,lon,lastS){
+    var x=(lon-g.lon0)*g.kx,y=(lat-g.lat0)*g.ky,p=null;
+    if(lastS!=null)p=projRoute(R,x,y,lastS-80,lastS+400);
+    if(!p||p.off>45)p=projRoute(R,x,y,-1,Infinity);
+    return p;
+  }
+  /* which branch of junction q does the route take */
+  function routeExit(q,R,s0,mine){
+    var p=projRoute(R,q.x,q.y,s0-30,s0+700);if(!p||p.off>22)return null;
+    var end=R.cum[R.cum.length-1];if(p.s+10>end)return null;
+    var a=pointAt(R,p.s+3),b=pointAt(R,Math.min(end,p.s+28)),rb=brg(a,b),best=null,bd=50;
+    armsOf(q).forEach(function(x){if(x===mine||!x.outbound)return;var df=Math.abs(norm180(x.brg-rb));if(df<bd){bd=df;best=x;}});
+    return {arm:best,s:p.s};
   }
 
   /* walk forward from the matched position and return the first place where I must yield */
@@ -371,9 +469,9 @@ var Core=(function(){
     var maxDist=(opts&&opts.maxDist)||350,w=m.w,d=m.dir;
     var a=w.nodes[m.i],b=w.nodes[m.i+1],L=d2(a,b);
     var j=d===1?m.i+1:m.i,acc=d===1?(1-m.t)*L:m.t*L;
-    var pending=null,prevJ=-Infinity,path=[[m.lon,m.lat]];
+    var pending=null,prevJ=-Infinity,path=[[m.lon,m.lat]],R=opts&&opts.route,rs=R?(opts.routeS||0):0;
     for(var guard=0;guard<400;guard++){
-      var q=w.nodes[j];path.push([q.lon,q.lat]);
+      var q=w.nodes[j],exitArm=null;path.push([q.lon,q.lat]);
       var h=q.tags.highway;
       if(h==='give_way'||h==='stop'){
         var dt=q.tags.direction;
@@ -381,13 +479,18 @@ var Core=(function(){
       }
       if(deg(q)>=3){
         var sign=null;
+        if(R){
+          var mineArm=null;armsOf(q).forEach(function(x){if(x.w===w&&x.i===j&&x.d===-d)mineArm=x;});
+          var ex=routeExit(q,R,rs,mineArm);if(ex){rs=ex.s;exitArm=ex.arm;}
+        }
         if(pending){var toJ=acc-pending.acc;if(toJ<=60&&(pending.explicit||toJ<=pending.acc-prevJ))sign=pending.kind;}
-        var al=evalJunction(q,w,j,d,sign,acc,opts);
+        var al=evalJunction(q,w,j,d,sign,acc,opts,exitArm);
         if(al){al.path=path;return al;}
         pending=null;prevJ=acc;
       }
       var nj=j+d;
-      if(nj<0||nj>=w.nodes.length){
+      if(exitArm){w=exitArm.w;j=exitArm.i;d=exitArm.d;nj=j+d;}
+      else if(nj<0||nj>=w.nodes.length){
         var hin=null,cands=[],as=armsOf(q);
         as.forEach(function(x){if(x.w===w&&x.i===j&&x.d===-d)hin=(x.brg+180)%360;else if(x.outbound)cands.push(x);});
         if(hin===null||!cands.length)return null;
@@ -437,7 +540,7 @@ var Core=(function(){
     return {lat:p.lat+(n2.lat-p.lat)*t,lon:p.lon+(n2.lon-p.lon)*t,heading:brg(p,n2)};
   }
 
-  return {buildGraph:buildGraph,match:match,lookAhead:lookAhead,simStart:simStart,simStep:simStep,norm180:norm180};
+  return {buildGraph:buildGraph,match:match,lookAhead:lookAhead,simStart:simStart,simStep:simStep,norm180:norm180,routeXY:routeXY,progress:progress};
 })();
 /*CORE-END*/
 </script>
@@ -448,14 +551,15 @@ var $=function(id){return document.getElementById(id);};
 var EPS=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
 var RADIUS=1200,REFETCH=600;
 var HOME=[26.0864,44.4527]; /* Piața Victoriei, București */
-var S={on:false,voice:true,estimates:true,sim:false,follow:true,pos:null,heading:null,speed:0,acc:null,lastFix:null,
+var ROUTERS=['https://router.project-osrm.org/route/v1/driving/','https://routing.openstreetmap.de/routed-car/route/v1/driving/'];
+var S={on:false,voice:true,estimates:true,signals:true,dest:null,route:null,R:null,routeS:null,offCount:0,routing:false,routeAt:0,simS:0,sigAt:0,sim:false,follow:true,pos:null,heading:null,speed:0,acc:null,lastFix:null,
   graph:null,center:null,fetching:false,failAt:0,m:null,alert:null,alertAt:0,spoken:{},watch:null,simState:null,simTimer:null,wake:null,mapReady:false};
 
-try{var saved=JSON.parse(localStorage.getItem('prioritate')||'{}');if(saved.voice===false)S.voice=false;if(saved.estimates===false)S.estimates=false;}catch(e){}
-function save(){try{localStorage.setItem('prioritate',JSON.stringify({voice:S.voice,estimates:S.estimates}));}catch(e){}}
+try{var saved=JSON.parse(localStorage.getItem('prioritate')||'{}');if(saved.voice===false)S.voice=false;if(saved.estimates===false)S.estimates=false;if(saved.signals===false)S.signals=false;}catch(e){}
+function save(){try{localStorage.setItem('prioritate',JSON.stringify({voice:S.voice,estimates:S.estimates,signals:S.signals}));}catch(e){}}
 
 /* ---------- map ---------- */
-var map=null,puck=null,jx=null,puckEl,jxEl;
+var map=null,puck=null,jx=null,destMk=null,puckEl,jxEl;
 var dark=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches;
 function initMap(style){
   if(!window.maplibregl){setStatus('Harta nu s-a încărcat. Verifică internetul și reîncarcă pagina.');return;}
@@ -470,6 +574,8 @@ function initMap(style){
   puck=new maplibregl.Marker({element:puckEl,rotationAlignment:'map',pitchAlignment:'map'});
   jxEl=document.createElement('div');jxEl.className='jx';
   jx=new maplibregl.Marker({element:jxEl});
+  var de=document.createElement('div');de.className='destpin';destMk=new maplibregl.Marker({element:de,anchor:'bottom'});
+  if(S.dest)destMk.setLngLat([S.dest.lon,S.dest.lat]).addTo(map);
 }
 function iconData(kind){
   var c=document.createElement('canvas');c.width=c.height=56;var x=c.getContext('2d');
@@ -490,7 +596,11 @@ function addOverlay(){
   try{
     if(!map.hasImage('pr-yield'))map.addImage('pr-yield',iconData('give_way'),{pixelRatio:2});
     if(!map.hasImage('pr-stop'))map.addImage('pr-stop',iconData('stop'),{pixelRatio:2});
-    ['pr-path','pr-arms','pr-signs'].forEach(function(id){if(!map.getSource(id))map.addSource(id,{type:'geojson',data:EMPTY});});
+    ['pr-route','pr-path','pr-arms','pr-signs'].forEach(function(id){if(!map.getSource(id))map.addSource(id,{type:'geojson',data:EMPTY});});
+    if(!map.getLayer('pr-route-c'))map.addLayer({id:'pr-route-c',type:'line',source:'pr-route',layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':'#0b3fae','line-width':11,'line-opacity':.55}});
+    if(!map.getLayer('pr-route-l'))map.addLayer({id:'pr-route-l',type:'line',source:'pr-route',layout:{'line-cap':'round','line-join':'round'},
+      paint:{'line-color':'#4d8dff','line-width':7}});
     if(!map.getLayer('pr-path-l'))map.addLayer({id:'pr-path-l',type:'line',source:'pr-path',layout:{'line-cap':'round','line-join':'round'},
       paint:{'line-color':'#1766ff','line-width':9,'line-opacity':.85}});
     if(!map.getLayer('pr-arms-g'))map.addLayer({id:'pr-arms-g',type:'line',source:'pr-arms',layout:{'line-cap':'round','line-join':'round'},
@@ -507,15 +617,16 @@ function redrawOverlay(){
   if(S.on&&S.graph){S.graph.nodes.forEach(function(q){var h=q.tags.highway;
     if(h==='give_way'||h==='stop')feats.push({type:'Feature',properties:{icon:h==='stop'?'pr-stop':'pr-yield'},geometry:{type:'Point',coordinates:[q.lon,q.lat]}});});}
   setSrc('pr-signs',{type:'FeatureCollection',features:feats});
+  setSrc('pr-route',S.route?{type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:S.route.coords}}]}:EMPTY);
   drawAlertOnMap();
 }
 function drawAlertOnMap(){
   var a=S.on?S.alert:null;
   if(!a){setSrc('pr-arms',EMPTY);setSrc('pr-path',EMPTY);if(jx)jx.remove();return;}
-  var col=a.source==='estimate'?'#e08a00':'#e2372d';
+  var col=a.source==='estimate'?'#e08a00':a.source==='info'?'#1766ff':'#e2372d';
   setSrc('pr-arms',{type:'FeatureCollection',features:a.lines.map(function(l){return {type:'Feature',properties:{color:col},geometry:{type:'LineString',coordinates:l}};})});
   setSrc('pr-path',{type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:a.path}}]});
-  if(jx&&map){jxEl.className='jx'+(a.source==='estimate'?' estimate':'');jx.setLngLat([a.lon,a.lat]).addTo(map);}
+  if(jx&&map){jxEl.className='jx'+(a.source==='estimate'?' estimate':a.source==='info'?' info':'');jx.setLngLat([a.lon,a.lat]).addTo(map);}
 }
 
 /* ---------- text ---------- */
@@ -526,22 +637,44 @@ function sidesText(sides){
 }
 function describe(a){
   var st=sidesText(a.sides),html=st.replace(/(stânga|dreapta|față)/g,'<b>$1</b>');
-  if(a.kind==='stop')return {title:'Stop',sub:'Oprește și cedează celor '+html,say:'oprire la stop. Acordă prioritate celor '+st+'.',tag:'Indicator'};
-  if(a.kind==='roundabout')return {title:'Sens giratoriu',sub:'Cedează celor din <b>stânga</b>, aflați în giratoriu',say:'sens giratoriu. Cedează celor din stânga.',tag:'Regulă'};
-  if(a.kind==='right_priority')return {title:'Prioritate de dreapta',sub:'Fără indicator în hartă. Cedează celor din <b>dreapta</b>',say:'intersecție nesemnalizată. Prioritate de dreapta.',tag:'Estimare'};
-  if(a.source==='estimate')return {title:'Probabil cedezi',sub:'Drum mai important. Vin '+html,say:'probabil cedezi trecerea. Vin '+st+'.',tag:'Estimare'};
-  if(a.note==='service')return {title:'Cedează trecerea',sub:'Ieși pe drumul public. Vin '+html,say:'ieși pe drumul public. Cedează celor '+st+'.',tag:'Regulă'};
-  return {title:'Cedează trecerea',sub:'Vin '+html,say:'cedează trecerea. Vin '+st+'.',tag:'Indicator'};
+  var mv=a.move==='left'?'la stânga':a.move==='right'?'la dreapta':'';
+  var pre=mv?'Virezi '+mv+'. ':'',extra=a.leftExtra?'<span>Dacă faci stânga, cedezi și celor din față</span>':'',d;
+  if(a.kind==='signals')d={title:'Semafor',sub:a.move==='left'?'Virezi la stânga. La verde, cedează celor din <b>față</b>':pre+'Intersecție semaforizată'+extra,
+    say:'semafor.'+(a.move==='left'?' La verde, cedează celor din față.':''),tag:'Info'};
+  else if(a.kind==='left_turn')d={title:'Viraj la stânga',sub:'Cedează celor din <b>față</b>',say:'cedează celor din față.',tag:'Regulă'};
+  else if(a.kind==='stop')d={title:'Stop',sub:pre+'Oprește și cedează celor '+html+extra,say:'oprire la stop. Acordă prioritate celor '+st+'.',tag:'Indicator'};
+  else if(a.kind==='roundabout')d={title:'Sens giratoriu',sub:'Cedează celor din <b>stânga</b>, aflați în giratoriu',say:'sens giratoriu. Cedează celor din stânga.',tag:'Regulă'};
+  else if(a.kind==='right_priority')d={title:'Prioritate de dreapta',sub:pre+'Fără indicator în hartă. Cedează celor '+html+extra,say:'intersecție nesemnalizată. Cedează celor '+st+'.',tag:'Estimare'};
+  else if(a.source==='estimate')d={title:'Probabil cedezi',sub:pre+'Drum mai important. Vin '+html+extra,say:'probabil cedezi trecerea. Vin '+st+'.',tag:'Estimare'};
+  else if(a.note==='service')d={title:'Cedează trecerea',sub:pre+'Ieși pe drumul public. Vin '+html+extra,say:'ieși pe drumul public. Cedează celor '+st+'.',tag:'Regulă'};
+  else d={title:'Cedează trecerea',sub:pre+'Vin '+html+extra,say:'cedează trecerea. Vin '+st+'.',tag:'Indicator'};
+  if(mv)d.say=mv+', '+d.say;
+  return d;
+}
+function fmtKm(m){return m<1000?Math.round(m/10)*10+' m':(m/1000).toFixed(m<10000?1:0).replace('.',',')+' km';}
+var MODS={left:'La stânga',right:'La dreapta','slight left':'Ușor la stânga','slight right':'Ușor la dreapta','sharp left':'Strâns la stânga','sharp right':'Strâns la dreapta',straight:'Înainte',uturn:'Întoarce'};
+var ANG={uturn:180,'sharp right':135,right:90,'slight right':40,straight:0,'slight left':-40,left:-90,'sharp left':-135};
+function navIcon(st){
+  if(st.type==='arrive')return '<svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 31s-10-8.500-10-16a10 10 0 0 1 20 0c0 7.500-10 16-10 16z"/><circle cx="18" cy="15" r="3.500"/></svg>';
+  if(st.type==='roundabout'||st.type==='rotary')return '<svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a9 9 0 1 1-7.800 4.500"/><path d="m6 11.500 4.500 1.500-1 4.500"/></svg>';
+  return '<svg viewBox="0 0 36 36"><g transform="rotate('+(ANG[st.mod]||0)+' 18 18)" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 30V7M9.500 15.500 18 7l8.500 8.500"/></g></svg>';
+}
+function navLabel(st){
+  if(st.type==='arrive')return 'Destinație';
+  if(st.type==='roundabout'||st.type==='rotary')return 'Giratoriu'+(st.exit?', ieșirea '+st.exit:'')+(st.name?' · '+st.name:'');
+  return (MODS[st.mod]||'Continuă')+(st.name?' · '+st.name:'');
 }
 function fmtDist(d){if(d<25)return 'Acum';if(d<100)return Math.round(d/5)*5+' m';return Math.round(d/10)*10+' m';}
 var SIGNS={
   give_way:'<svg viewBox="0 0 58 58"><path d="M6 9h46L29 50z" fill="#fff" stroke="#e2372d" stroke-width="7" stroke-linejoin="round"/></svg>',
   stop:'<svg viewBox="0 0 58 58"><path d="M19 4h20l15 15v20L39 54H19L4 39V19z" fill="#e2372d" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><text x="29" y="35" text-anchor="middle" font-size="15" font-weight="800" fill="#fff" font-family="Arial,sans-serif">STOP</text></svg>',
   roundabout:'<svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="25" fill="#1766ff" stroke="#fff" stroke-width="3"/><g fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><path d="M29 17a12 12 0 1 1-10.4 6"/><path d="m13 21 6 2-1 6"/></g></svg>',
+  signals:'<svg viewBox="0 0 58 58"><rect x="18" y="3" width="22" height="52" rx="9" fill="#2a323d" stroke="#fff" stroke-width="3"/><circle cx="29" cy="15" r="5.500" fill="#ff5449"/><circle cx="29" cy="29" r="5.500" fill="#ffad33"/><circle cx="29" cy="43" r="5.500" fill="#35c97c"/></svg>',
+  left_turn:'<svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="25" fill="#1766ff" stroke="#fff" stroke-width="3"/><path d="M36 43V27a5 5 0 0 0-5-5H17m7-8-8 8 8 8" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   right_priority:'<svg viewBox="0 0 58 58"><path d="M29 7 53 49H5z" fill="#fff" stroke="#e08a00" stroke-width="6" stroke-linejoin="round"/><path d="m22 28 14 14M36 28 22 42" stroke="#12171e" stroke-width="4.5" stroke-linecap="round"/></svg>'
 };
 function diagramSVG(a){
-  var c=37,out='',col=a.source==='estimate'?'#ffad33':'#ff5449';
+  var c=37,out='',col=a.source==='estimate'?'#ffad33':a.source==='info'?'#4d8dff':'#ff5449';
   a.diagram.forEach(function(o){
     var r=o.rel*Math.PI/180,x=c+29*Math.sin(r),y=c-29*Math.cos(r);
     out+='<line x1="'+c+'" y1="'+c+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="'+(o.yield?col:'rgba(255,255,255,.3)')+'" stroke-width="'+(o.yield?9:7)+'" stroke-linecap="round"/>';
@@ -550,6 +683,10 @@ function diagramSVG(a){
     if(!o.yield)return;var r=o.rel*Math.PI/180,s=Math.sin(r),k=-Math.cos(r);
     var tx=c+13*s,ty=c+13*k,bx=c+23*s,by=c+23*k,px=-k*5.5,py=s*5.5;
     out+='<path d="M'+tx.toFixed(1)+' '+ty.toFixed(1)+'L'+(bx+px).toFixed(1)+' '+(by+py).toFixed(1)+'L'+(bx-px).toFixed(1)+' '+(by-py).toFixed(1)+'z" fill="#12171e"/>';
+  });
+  a.diagram.forEach(function(o){
+    if(!o.exit)return;var r=o.rel*Math.PI/180,x=c+29*Math.sin(r),y=c-29*Math.cos(r);
+    out+='<line x1="'+c+'" y1="'+c+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 7"/>';
   });
   out+='<line x1="'+c+'" y1="'+c+'" x2="'+c+'" y2="68" stroke="#fff" stroke-width="9" stroke-linecap="round"/>';
   out+='<path d="M'+c+' 44l6 10h-12z" fill="#1766ff"/>';
@@ -566,6 +703,17 @@ function render(){
   $('chipVoice').setAttribute('aria-pressed',S.voice?'true':'false');
   $('chipEst').setAttribute('aria-pressed',S.estimates?'true':'false');
   $('chipDemo').setAttribute('aria-pressed',S.sim?'true':'false');
+  $('chipSig').setAttribute('aria-pressed',S.signals?'true':'false');
+  var nav=$('nav'),navOn=S.on&&!!S.dest;nav.classList.toggle('show',navOn);
+  if(navOn){
+    if(S.route&&S.routeS!=null){
+      var nx=null;for(var k=0;k<S.route.steps.length;k++){var stp=S.route.steps[k];if(stp.type!=='depart'&&stp.s>S.routeS+3){nx=stp;break;}}
+      if(!nx)nx={type:'arrive',s:S.route.dist};
+      $('navIcon').innerHTML=navIcon(nx);$('navDist').textContent=fmtKm(Math.max(0,nx.s-S.routeS));$('navName').textContent=navLabel(nx);
+      var left=Math.max(0,S.route.dist-S.routeS);$('navLeft').textContent=fmtKm(left);
+      $('navEta').textContent=Math.max(1,Math.round(S.route.dur*left/(S.route.dist||1)/60))+' min';
+    }else{$('navIcon').innerHTML=navIcon({type:'arrive'});$('navDist').textContent=S.routing?'Calculez…':'Traseu';$('navName').textContent=S.dest.name;$('navLeft').textContent='–';$('navEta').textContent='';}
+  }
   $('spd').textContent=S.on&&S.pos?Math.round(S.speed*3.6):'–';
   if(a){
     var d=describe(a);
@@ -578,7 +726,7 @@ function render(){
     card.classList.add('show');pill.classList.remove('show');
   }else{
     shownKey=null;card.classList.remove('show');
-    pill.classList.toggle('show',S.on);
+    pill.classList.toggle('show',S.on&&!navOn);
   }
   if(!S.on){$('gps').textContent='GPS oprit';return;}
   $('gps').textContent=S.sim?'Demo, fără GPS':S.acc!=null?'GPS ±'+Math.round(S.acc)+' m':'Caut semnal GPS…';
@@ -613,6 +761,7 @@ function announce(a){
   if(a.dist>lead)return;
   if(S.spoken[a.key]&&now-S.spoken[a.key]<45000)return;
   S.spoken[a.key]=now;
+  if(a.kind==='signals'&&a.move!=='left'){if(now-S.sigAt<12000)return;S.sigAt=now;}
   var d=describe(a),r=Math.round(a.dist/10)*10;
   speak((a.dist<40?'Acum, ':'Peste '+r+' de metri, ')+d.say);
 }
@@ -632,7 +781,7 @@ function needData(lon,lat){
     fetch(EPS[i++],{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl?ctl.signal:undefined})
       .then(function(r){if(!r.ok)throw new Error('http');return r.json();})
       .then(function(j){clearTimeout(to);var g=Core.buildGraph(j);if(!g||!g.ways.length)throw new Error('empty');
-        S.graph=g;S.center=[lon,lat];S.fetching=false;S.failAt=0;S.m=null;
+        S.graph=g;S.center=[lon,lat];S.fetching=false;S.failAt=0;S.m=null;S.R=S.route?Core.routeXY(g,S.route.coords):null;
         if(S.sim&&S.pos)S.simState=Core.simStart(g,S.pos[1],S.pos[0],S.heading);
         if(S.on)setStatus(S.sim?'Demo pornit: mașina merge singură pe hartă.':'Activ. Te anunț înainte de fiecare cedare.');
         redrawOverlay();render();})
@@ -651,15 +800,28 @@ function onFix(lon,lat,heading,speed,acc){
   S.pos=[lon,lat];S.heading=heading;S.speed=speed||0;S.acc=acc;S.lastFix=Date.now();
   needData(lon,lat);
   var alert=null;
+  if(S.dest&&!S.route)requestRoute();
+  if(S.graph&&S.route){
+    if(!S.R)S.R=Core.routeXY(S.graph,S.route.coords);
+    var pr=Core.progress(S.graph,S.R,lat,lon,S.routeS);
+    if(pr&&pr.off<45){
+      S.routeS=pr.s;S.offCount=0;
+      if(S.route.dist-pr.s<25){speak('Ai ajuns la destinație');setStatus('Ai ajuns la destinație.');clearDest();}
+    }else if(++S.offCount>=4){S.offCount=1;requestRoute();}
+  }
   if(S.graph){
     S.m=Core.match(S.graph,lat,lon,heading,S.m);
     if(S.m){
-      var al=Core.lookAhead(S.graph,S.m,{estimates:S.estimates,maxDist:380});
+      var o={estimates:S.estimates,signals:S.signals,maxDist:380};
+      if(S.route&&S.R&&S.routeS!=null&&S.offCount===0){o.route=S.R;o.routeS=S.routeS;}
+      var al=Core.lookAhead(S.graph,S.m,o);
       if(al&&al.dist<=Math.max(220,S.speed*14))alert=al;
     }
   }
   var now=Date.now();
-  if(alert){S.alert=alert;S.alertAt=now;announce(alert);}
+  if(alert){
+    if(S.alert&&S.alert.key===alert.key){S.alert.dist=alert.dist;S.alert.path=alert.path;alert=S.alert;}  /* same junction: keep what was announced */
+    S.alert=alert;S.alertAt=now;announce(alert);}
   else if(S.alert&&now-S.alertAt>2500)S.alert=null;
   var show=S.m&&S.m.dd<18?[S.m.lon,S.m.lat]:[lon,lat];
   if(map&&puck){
@@ -701,6 +863,73 @@ function stop(){
   setStatus('Pornește-l ca să afli unde cedezi și din ce parte.');
   redrawOverlay();render();
 }
+/* ---------- destination, route, search ---------- */
+function getJSON(urls,i){
+  if(i>=urls.length)return Promise.reject(new Error('all failed'));
+  var ctl=window.AbortController?new AbortController():null,to=setTimeout(function(){if(ctl)ctl.abort();},12000);
+  return fetch(urls[i],{signal:ctl?ctl.signal:undefined}).then(function(r){clearTimeout(to);if(!r.ok)throw new Error('http');return r.json();})
+    .catch(function(){clearTimeout(to);return getJSON(urls,i+1);});
+}
+function parseCoords(t){
+  if(!t)return null;var m;
+  try{t=t+' '+decodeURIComponent(t);}catch(e){}
+  m=t.match(/[?&](?:ll|dest|daddr|destination|q|query|to)=(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/i)||t.match(/@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/)||
+    t.match(/(?:^|\s)(-?\d{1,2}\.\d{3,})\s*[,;]\s*(-?\d{1,3}\.\d{3,})(?:\s|$)/);
+  if(!m)return null;var la=+m[1],lo=+m[2];
+  return Math.abs(la)<=90&&Math.abs(lo)<=180?{lat:la,lon:lo}:null;
+}
+function setDest(d){
+  S.dest=d;S.route=null;S.R=null;S.routeS=null;S.offCount=0;S.simS=0;S.routeAt=0;
+  $('q').value=d.name;$('q').blur();$('results').hidden=true;
+  var w=$('waze');w.href='https://waze.com/ul?ll='+d.lat.toFixed(6)+','+d.lon.toFixed(6)+'&navigate=yes';w.hidden=false;$('clear').hidden=false;
+  var gm=$('gmaps');gm.href='https://www.google.com/maps/dir/?api=1&destination='+d.lat.toFixed(6)+','+d.lon.toFixed(6)+'&travelmode=driving';gm.hidden=false;
+  if(destMk&&map)destMk.setLngLat([d.lon,d.lat]).addTo(map);
+  if(S.on){S.follow=true;if(S.pos)requestRoute();}
+  else{setStatus('Destinație aleasă. Pornește modul ca să calculez traseul.');if(map)map.easeTo({center:[d.lon,d.lat],zoom:15,duration:600});}
+  redrawOverlay();render();
+}
+function clearDest(){
+  S.dest=null;S.route=null;S.R=null;S.routeS=null;S.offCount=0;S.simS=0;
+  $('q').value='';$('waze').hidden=true;$('gmaps').hidden=true;$('clear').hidden=true;$('results').hidden=true;
+  if(destMk)destMk.remove();
+  redrawOverlay();render();
+}
+function requestRoute(){
+  if(S.routing||!S.dest||!S.pos||Date.now()-S.routeAt<8000)return;
+  S.routing=true;S.routeAt=Date.now();render();
+  var tail=S.pos[0].toFixed(6)+','+S.pos[1].toFixed(6)+';'+S.dest.lon.toFixed(6)+','+S.dest.lat.toFixed(6)+'?overview=full&geometries=geojson&steps=true';
+  var dest=S.dest;
+  getJSON(ROUTERS.map(function(b){return b+tail;}),0).then(function(j){
+    S.routing=false;if(S.dest!==dest)return;
+    var r=j.routes&&j.routes[0];if(!r)throw new Error('none');
+    var coords=r.geometry.coordinates,cum=[0],steps=[],acc=0;
+    for(var i=1;i<coords.length;i++)cum.push(cum[i-1]+distM(coords[i-1],coords[i]));
+    (r.legs||[]).forEach(function(l){(l.steps||[]).forEach(function(st){var m=st.maneuver||{};steps.push({s:acc,type:m.type,mod:m.modifier,exit:m.exit,name:st.name||''});acc+=st.distance||0;});});
+    S.route={coords:coords,cum:cum,steps:steps,dist:cum[cum.length-1],dur:r.duration||0};
+    S.R=S.graph?Core.routeXY(S.graph,coords):null;S.routeS=null;S.offCount=0;S.simS=0;S.alert=null;
+    setStatus('Traseu gata. Îți spun prioritatea în funcție de direcția în care virezi.');
+    redrawOverlay();render();
+  }).catch(function(){S.routing=false;setStatus('Nu pot calcula traseul acum. Reîncerc singur.');render();});
+}
+function search(text){
+  text=(text||'').trim();if(!text)return;
+  var c=parseCoords(text);if(c){setDest({lat:c.lat,lon:c.lon,name:c.lat.toFixed(5)+', '+c.lon.toFixed(5)});return;}
+  if(/^https?:\/\//i.test(text)){setStatus('Nu am găsit coordonate în link. Scrie adresa sau lipește un link cu „ll=lat,lon”.');return;}
+  var ul=$('results');ul.hidden=false;ul.innerHTML='<li class="none">Caut…</li>';
+  var ctr=S.pos||(map?[map.getCenter().lng,map.getCenter().lat]:HOME),q=encodeURIComponent(text);
+  var vb=(ctr[0]-.6)+','+(ctr[1]+.4)+','+(ctr[0]+.6)+','+(ctr[1]-.4);
+  getJSON(['https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=ro&viewbox='+vb+'&q='+q,
+           'https://photon.komoot.io/api/?limit=6&lat='+ctr[1]+'&lon='+ctr[0]+'&q='+q],0).then(function(j){
+    var list=[];
+    if(Array.isArray(j))j.forEach(function(x){var parts=(x.display_name||'').split(', ');list.push({lat:+x.lat,lon:+x.lon,name:x.name||parts[0],sub:parts.slice(1,4).join(', ')});});
+    else(j.features||[]).forEach(function(f){var p=f.properties||{},g=f.geometry.coordinates;list.push({lat:g[1],lon:g[0],name:p.name||[p.street,p.housenumber].filter(Boolean).join(' ')||text,sub:[p.street,p.district,p.city,p.country].filter(Boolean).join(', ')});});
+    ul.innerHTML='';
+    if(!list.length){ul.innerHTML='<li class="none">Nimic găsit. Încearcă altă formulare.</li>';return;}
+    list.forEach(function(d){var li=document.createElement('li'),b=document.createElement('button');b.type='button';
+      b.textContent=d.name;var sm=document.createElement('small');sm.textContent=d.sub;b.appendChild(sm);
+      b.addEventListener('click',function(){setDest({lat:d.lat,lon:d.lon,name:d.name});});li.appendChild(b);ul.appendChild(li);});
+  }).catch(function(){ul.innerHTML='<li class="none">Căutarea nu merge acum. Poți lipi coordonate: 44.4268, 26.1025</li>';});
+}
 /* ---------- demo ---------- */
 function startSim(){
   stopSim();
@@ -710,6 +939,14 @@ function startSim(){
   needData(c.lng,c.lat);
   if(S.graph)S.simState=Core.simStart(S.graph,c.lat,c.lng,null);
   S.simTimer=setInterval(function(){
+    if(S.dest){
+      if(!S.route){requestRoute();render();return;}
+      var rt=S.route,v2=11;S.simS=Math.min(rt.dist,S.simS+v2*0.3);
+      var i=0;while(i<rt.cum.length-2&&rt.cum[i+1]<S.simS)i++;
+      var A=rt.coords[i],B=rt.coords[i+1],t=(S.simS-rt.cum[i])/((rt.cum[i+1]-rt.cum[i])||1),kx=Math.cos(A[1]*Math.PI/180);
+      onFix(A[0]+(B[0]-A[0])*t,A[1]+(B[1]-A[1])*t,(Math.atan2((B[0]-A[0])*kx,B[1]-A[1])*180/Math.PI+360)%360,v2,5);
+      S.simState=null;return;
+    }
     if(!S.simState){if(S.graph&&S.pos)S.simState=Core.simStart(S.graph,S.pos[1],S.pos[0],S.heading);if(!S.simState){if(S.pos)needData(S.pos[0],S.pos[1]);render();return;}}
     var v=11,p=Core.simStep(S.simState,v*0.3,Math.random);
     onFix(p.lon,p.lat,p.heading,v,5);
@@ -722,10 +959,14 @@ $('toggle').addEventListener('click',function(){if(S.on)stop();else start();});
 $('chipVoice').addEventListener('click',function(){S.voice=!S.voice;save();render();if(S.voice)speak('Voce pornită',true);else{try{speechSynthesis.cancel();}catch(e){}}});
 $('chipEst').addEventListener('click',function(){S.estimates=!S.estimates;save();
   setStatus(S.estimates?'Estimări pornite: te anunț și unde harta nu are indicator.':'Doar indicatoare și reguli sigure din hartă.');render();});
+$('chipSig').addEventListener('click',function(){S.signals=!S.signals;save();
+  setStatus(S.signals?'Te anunț și la intersecțiile cu semafor.':'Nu mai anunț semafoarele.');render();});
+$('search').addEventListener('submit',function(e){e.preventDefault();search($('q').value);});
+$('clear').addEventListener('click',function(){clearDest();setStatus(S.on?'Destinație ștearsă. Merg în continuare fără traseu.':'Pornește-l ca să afli unde cedezi și din ce parte.');});
 $('chipDemo').addEventListener('click',function(){
   if(S.sim){stop();return;}
-  if(S.on)stop();
-  S.sim=true;start();
+  var keep=S.dest;if(S.on)stop();
+  S.sim=true;start();if(keep&&!S.dest)setDest(keep);
 });
 $('recenter').addEventListener('click',function(){S.follow=true;this.classList.remove('show');if(S.pos&&map)map.easeTo({center:S.pos,zoom:17,duration:500});});
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&S.on)wake();});
@@ -736,7 +977,16 @@ var LIGHT='https://tiles.openfreemap.org/styles/liberty',DARK='https://tiles.ope
 if(dark){fetch(DARK).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){initMap(j);}).catch(function(){initMap(LIGHT);});}
 else initMap(LIGHT);
 render();
-window.__app={S:S,onFix:onFix};
+/* a destination can arrive in the page address (?ll=lat,lon, ?q=adresa) or through the phone's Share menu */
+(function(){
+  var qs;try{qs=new URLSearchParams(location.search);}catch(e){return;}
+  var raw=[qs.get('ll'),qs.get('dest'),qs.get('url'),qs.get('text'),qs.get('title'),qs.get('q')].filter(Boolean);
+  if(!raw.length)return;
+  var c=parseCoords(location.search)||parseCoords(raw.join(' '));
+  if(c){setDest({lat:c.lat,lon:c.lon,name:qs.get('title')||qs.get('name')||c.lat.toFixed(5)+', '+c.lon.toFixed(5)});start();}
+  else{var t=(qs.get('q')||qs.get('text')||qs.get('title')||'').replace(/https?:\/\/\S+/g,'').trim();if(t){$('q').value=t;search(t);}}
+})();
+window.__app={S:S,onFix:onFix,setDest:setDest};
 })();
 </script>
 </body>
