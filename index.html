@@ -248,7 +248,8 @@ var Core=(function(){
 
   function buildGraph(json){
     var nodes=new Map(),ways=[],lat0=0,lon0=0,n=0,els=json.elements||[];
-    els.forEach(function(e){if(e.type==='node'){nodes.set(e.id,{id:e.id,lat:e.lat,lon:e.lon,tags:e.tags||{},ways:[],_arms:null});lat0+=e.lat;lon0+=e.lon;n++;}});
+    els.forEach(function(e){if(e.type!=='node')return;var old=nodes.get(e.id);if(old){if(e.tags)old.tags=e.tags;return;}
+      nodes.set(e.id,{id:e.id,lat:e.lat,lon:e.lon,tags:e.tags||{},ways:[],_arms:null});lat0+=e.lat;lon0+=e.lon;n++;});
     if(!n)return null;
     lat0/=n;lon0/=n;var kx=111320*Math.cos(lat0*D2R),ky=110540;
     nodes.forEach(function(nd){nd.x=(nd.lon-lon0)*kx;nd.y=(nd.lat-lat0)*ky;});
@@ -548,12 +549,12 @@ var Core=(function(){
 (function(){
 'use strict';
 var $=function(id){return document.getElementById(id);};
-var EPS=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
-var RADIUS=1200,REFETCH=600;
+var EPS=['https://overpass.private.coffee/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter','https://overpass-api.de/api/interpreter'];
+var RADIUS=900;
 var HOME=[26.0864,44.4527]; /* Piața Victoriei, București */
 var ROUTERS=['https://router.project-osrm.org/route/v1/driving/','https://routing.openstreetmap.de/routed-car/route/v1/driving/'];
 var S={on:false,voice:true,estimates:true,signals:true,dest:null,route:null,R:null,routeS:null,offCount:0,routing:false,routeAt:0,simS:0,sigAt:0,sim:false,follow:true,pos:null,heading:null,speed:0,acc:null,lastFix:null,
-  graph:null,center:null,fetching:false,failAt:0,m:null,alert:null,alertAt:0,spoken:{},watch:null,simState:null,simTimer:null,wake:null,mapReady:false};
+  graph:null,center:null,reach:450,fails:0,fetching:false,failAt:0,m:null,alert:null,alertAt:0,spoken:{},watch:null,simState:null,simTimer:null,wake:null,mapReady:false};
 
 try{var saved=JSON.parse(localStorage.getItem('prioritate')||'{}');if(saved.voice===false)S.voice=false;if(saved.estimates===false)S.estimates=false;if(saved.signals===false)S.signals=false;}catch(e){}
 function save(){try{localStorage.setItem('prioritate',JSON.stringify({voice:S.voice,estimates:S.estimates,signals:S.signals}));}catch(e){}}
@@ -731,7 +732,7 @@ function render(){
   if(!S.on){$('gps').textContent='GPS oprit';return;}
   $('gps').textContent=S.sim?'Demo, fără GPS':S.acc!=null?'GPS ±'+Math.round(S.acc)+' m':'Caut semnal GPS…';
   if(!S.pos)setPill(S.sim?'Pregătesc demo…':'Caut poziția ta…','wait');
-  else if(!S.graph)setPill(S.failAt?'Nu pot încărca drumurile':'Încarc drumurile din zonă…',S.failAt?'err':'wait');
+  else if(!S.graph)setPill(S.failAt&&!S.fetching?'Servere ocupate, reîncerc…':'Încarc drumurile din zonă…',S.failAt&&!S.fetching?'err':'wait');
   else if(!S.m)setPill('Nu ești pe un drum cunoscut','wait');
   else setPill('Nicio cedare în față','ok');
 }
@@ -768,25 +769,48 @@ function announce(a){
 
 /* ---------- data ---------- */
 function distM(a,b){var kx=111320*Math.cos(a[1]*Math.PI/180);return Math.hypot((a[0]-b[0])*kx,(a[1]-b[1])*110540);}
+/* Road data comes from public OpenStreetMap servers that are often busy, so several are tried:
+   the next one starts when the previous fails or after 4 s without an answer; the first good answer wins. */
+function fetchRoads(lon,lat){
+  var hw='^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$';
+  var q='[out:json][timeout:20];way(around:'+RADIUS+','+lat.toFixed(5)+','+lon.toFixed(5)+')[highway~"'+hw+'"]->.w;.w out body qt;node(w.w);out skel qt;'+
+        'node(w.w)[highway~"^(give_way|stop|traffic_signals|mini_roundabout)$"];out body qt;';
+  var srcs=EPS.map(function(u){return {name:u.split('/')[2],url:u,reach:RADIUS/2,opt:{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'}}};});
+  var dla=0.0042,dlo=dla/Math.cos(lat*Math.PI/180);
+  srcs.push({name:'api.openstreetmap.org',reach:210,opt:{},
+    url:'https://api.openstreetmap.org/api/0.6/map.json?bbox='+(lon-dlo).toFixed(5)+','+(lat-dla).toFixed(5)+','+(lon+dlo).toFixed(5)+','+(lat+dla).toFixed(5)});
+  return new Promise(function(resolve,reject){
+    var next=0,live=0,done=false,errs=[],ctls=[],timer=null;
+    function end(){done=true;clearInterval(timer);ctls.forEach(function(c){try{c.abort();}catch(e){}});}
+    function launch(){
+      if(done||next>=srcs.length)return;
+      var src=srcs[next++],ctl=window.AbortController?new AbortController():null,opt={};for(var k in src.opt)opt[k]=src.opt[k];
+      if(ctl){opt.signal=ctl.signal;ctls.push(ctl);}
+      var to=setTimeout(function(){if(ctl)ctl.abort();},25000);live++;
+      fetch(src.url,opt).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+        .then(function(j){clearTimeout(to);if(done)return;var g=Core.buildGraph(j);if(!g||!g.ways.length)throw new Error('fără drumuri');end();resolve({graph:g,reach:src.reach,name:src.name});})
+        .catch(function(e){clearTimeout(to);live--;if(done)return;errs.push(src.name+': '+(e&&e.name==='AbortError'?'prea lent':(e&&e.message)||'eroare'));
+          if(next<srcs.length)launch();else if(live===0){end();reject(errs);}});
+    }
+    launch();timer=setInterval(launch,4000);
+  });
+}
 function needData(lon,lat){
   if(S.fetching)return;
-  if(S.center&&distM(S.center,[lon,lat])<REFETCH)return;
-  if(S.failAt&&Date.now()-S.failAt<12000)return;
+  if(S.center&&distM(S.center,[lon,lat])<S.reach)return;
+  if(S.failAt&&Date.now()-S.failAt<Math.min(30000,6000*S.fails))return;
   S.fetching=true;render();
-  var q='[out:json][timeout:25];way(around:'+RADIUS+','+lat.toFixed(5)+','+lon.toFixed(5)+')[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"];out body;>;out body qt;';
-  var i=0;
-  (function attempt(){
-    if(i>=EPS.length){S.fetching=false;S.failAt=Date.now();setStatus('Nu pot încărca drumurile. Reîncerc singur în câteva secunde.');render();return;}
-    var ctl=window.AbortController?new AbortController():null,to=setTimeout(function(){if(ctl)ctl.abort();},22000);
-    fetch(EPS[i++],{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl?ctl.signal:undefined})
-      .then(function(r){if(!r.ok)throw new Error('http');return r.json();})
-      .then(function(j){clearTimeout(to);var g=Core.buildGraph(j);if(!g||!g.ways.length)throw new Error('empty');
-        S.graph=g;S.center=[lon,lat];S.fetching=false;S.failAt=0;S.m=null;S.R=S.route?Core.routeXY(g,S.route.coords):null;
-        if(S.sim&&S.pos)S.simState=Core.simStart(g,S.pos[1],S.pos[0],S.heading);
-        if(S.on)setStatus(S.sim?'Demo pornit: mașina merge singură pe hartă.':'Activ. Te anunț înainte de fiecare cedare.');
-        redrawOverlay();render();})
-      .catch(function(){clearTimeout(to);attempt();});
-  })();
+  fetchRoads(lon,lat).then(function(res){
+    var g=res.graph;
+    S.graph=g;S.center=[lon,lat];S.reach=res.reach;S.fetching=false;S.failAt=0;S.fails=0;S.m=null;S.R=S.route?Core.routeXY(g,S.route.coords):null;
+    if(S.sim&&S.pos&&!S.dest)S.simState=Core.simStart(g,S.pos[1],S.pos[0],S.heading);
+    if(S.on&&!S.route)setStatus(S.sim?'Demo pornit: mașina merge singură pe hartă.':'Activ. Te anunț înainte de fiecare cedare.');
+    redrawOverlay();render();
+  }).catch(function(errs){
+    S.fetching=false;S.failAt=Date.now();S.fails++;S.lastErr=(errs&&errs.join(' · '))||'';
+    if(!S.graph)setStatus('Serverele cu drumuri nu răspund ('+S.lastErr+'). Reîncerc singur.');
+    render();
+  });
 }
 
 /* ---------- position pipeline ---------- */
